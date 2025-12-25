@@ -867,56 +867,16 @@ COMMENT ON INDEX idx_logistics_tracks_start_time IS '物流轨迹开始时间索
 
 -- =====================================================
 -- =====================================================
--- 通用存储过程和函数
+-- MALL SCHEMA - 函数和存储过程
 -- =====================================================
 -- =====================================================
 
 -- =====================================================
--- 函数定义
+-- 函数定义（mall）
 -- =====================================================
-
--- 生成唯一ID函数
-CREATE OR REPLACE FUNCTION generate_uuid()
-RETURNS UUID AS $$
-BEGIN
-    RETURN gen_random_uuid();
-END;
-$$ LANGUAGE plpgsql;
-COMMENT ON FUNCTION generate_uuid() IS '生成UUID函数：返回唯一的UUID值';
-
--- 计算两点之间距离（GIS函数）
-CREATE OR REPLACE FUNCTION calculate_distance(lat1 FLOAT, lon1 FLOAT, lat2 FLOAT, lon2 FLOAT)
-RETURNS FLOAT AS $$
-BEGIN
-    RETURN ST_Distance(
-        ST_MakePoint(lon1, lat1)::geography,
-        ST_MakePoint(lon2, lat2)::geography
-    ) / 1000; -- 返回公里数
-END;
-$$ LANGUAGE plpgsql;
-COMMENT ON FUNCTION calculate_distance(FLOAT, FLOAT, FLOAT, FLOAT) IS '计算两点距离函数：返回两个经纬度坐标之间的距离（公里）';
-
--- 判断点是否在区域内（GIS函数）
-CREATE OR REPLACE FUNCTION is_point_in_zone(point_lat FLOAT, point_lon FLOAT, zone_id INTEGER)
-RETURNS BOOLEAN AS $$
-DECLARE
-    point_geom GEOMETRY;
-    zone_geom GEOMETRY;
-BEGIN
-    point_geom := ST_SetSRID(ST_MakePoint(point_lon, point_lat), 4326);
-    zone_geom := (SELECT geometry FROM gis.delivery_zones WHERE delivery_zones.zone_id = is_point_in_zone.zone_id);
-    
-    IF zone_geom IS NULL THEN
-        RETURN false;
-    END IF;
-    
-    RETURN ST_Contains(zone_geom, point_geom);
-END;
-$$ LANGUAGE plpgsql;
-COMMENT ON FUNCTION is_point_in_zone(FLOAT, FLOAT, INTEGER) IS '判断点是否在区域内函数：检查坐标点是否在指定配送区域内';
 
 -- 获取用户总消费金额函数
-CREATE OR REPLACE FUNCTION get_user_total_spent(user_id_param INTEGER)
+CREATE OR REPLACE FUNCTION mall.get_user_total_spent(user_id_param INTEGER)
 RETURNS DECIMAL(10,2) AS $$
 DECLARE
     total_spent DECIMAL(10,2);
@@ -929,10 +889,10 @@ BEGIN
     RETURN total_spent;
 END;
 $$ LANGUAGE plpgsql;
-COMMENT ON FUNCTION get_user_total_spent(INTEGER) IS '获取用户总消费金额函数：返回用户已完成的订单总金额';
+COMMENT ON FUNCTION mall.get_user_total_spent(INTEGER) IS '获取用户总消费金额函数：返回用户已完成的订单总金额';
 
 -- 获取商品平均评分函数
-CREATE OR REPLACE FUNCTION get_product_avg_rating(product_id_param INTEGER)
+CREATE OR REPLACE FUNCTION mall.get_product_avg_rating(product_id_param INTEGER)
 RETURNS DECIMAL(3,2) AS $$
 DECLARE
     avg_rating DECIMAL(3,2);
@@ -944,14 +904,14 @@ BEGIN
     RETURN avg_rating;
 END;
 $$ LANGUAGE plpgsql;
-COMMENT ON FUNCTION get_product_avg_rating(INTEGER) IS '获取商品平均评分函数：返回指定商品的平均评分';
+COMMENT ON FUNCTION mall.get_product_avg_rating(INTEGER) IS '获取商品平均评分函数：返回指定商品的平均评分';
 
 -- =====================================================
--- 存储过程定义
+-- 存储过程定义（mall）
 -- =====================================================
 
 -- 清理过期订单存储过程
-CREATE OR REPLACE PROCEDURE clean_expired_orders(IN days_old INTEGER)
+CREATE OR REPLACE PROCEDURE mall.clean_expired_orders(IN days_old INTEGER)
 LANGUAGE plpgsql
 AS $$
 BEGIN
@@ -965,10 +925,10 @@ BEGIN
     RAISE NOTICE '已清理 % 天前的过期订单', days_old;
 END;
 $$;
-COMMENT ON PROCEDURE clean_expired_orders(INTEGER) IS '清理过期订单存储过程：将超过指定天数的待支付订单标记为已取消';
+COMMENT ON PROCEDURE mall.clean_expired_orders(INTEGER) IS '清理过期订单存储过程：将超过指定天数的待支付订单标记为已取消';
 
 -- 批量更新商品库存存储过程
-CREATE OR REPLACE PROCEDURE batch_update_stock(IN product_ids_param INTEGER[], IN quantities_param INTEGER[])
+CREATE OR REPLACE PROCEDURE mall.batch_update_stock(IN product_ids_param INTEGER[], IN quantities_param INTEGER[])
 LANGUAGE plpgsql
 AS $$
 DECLARE
@@ -991,10 +951,10 @@ BEGIN
     RAISE NOTICE '已批量更新 % 个商品的库存', array_length(product_ids_param, 1);
 END;
 $$;
-COMMENT ON PROCEDURE batch_update_stock(INTEGER[], INTEGER[]) IS '批量更新商品库存存储过程：根据商品ID和数量数组批量扣减库存';
+COMMENT ON PROCEDURE mall.batch_update_stock(INTEGER[], INTEGER[]) IS '批量更新商品库存存储过程：根据商品ID和数量数组批量扣减库存';
 
 -- 生成月度销售报表存储过程
-CREATE OR REPLACE PROCEDURE generate_monthly_sales_report(IN year_param INTEGER, IN month_param INTEGER)
+CREATE OR REPLACE PROCEDURE mall.generate_monthly_sales_report(IN year_param INTEGER, IN month_param INTEGER)
 LANGUAGE plpgsql
 AS $$
 BEGIN
@@ -1019,16 +979,16 @@ BEGIN
     RAISE NOTICE '已生成 % 年 % 月的销售报表', year_param, month_param;
 END;
 $$;
-COMMENT ON PROCEDURE generate_monthly_sales_report(INTEGER, INTEGER) IS '生成月度销售报表存储过程：创建指定年月的销售统计报表';
+COMMENT ON PROCEDURE mall.generate_monthly_sales_report(INTEGER, INTEGER) IS '生成月度销售报表存储过程：创建指定年月的销售统计报表';
 
 -- 批量导入用户存储过程（测试用）
-CREATE OR REPLACE PROCEDURE bulk_import_users(IN user_count INTEGER)
+CREATE OR REPLACE PROCEDURE mall.bulk_import_users(IN user_count INTEGER)
 LANGUAGE plpgsql
 AS $$
 DECLARE
     i INTEGER;
-    first_name_list TEXT[] := ARRAY['张', '李', '王', '刘', '陈'];
-    last_name_list TEXT[] := ARRAY['伟', '芳', '娜', '秀英', '敏'];
+    first_name_list TEXT[] := ARRAY['郑', '贺', '王', '刘', '陈'];
+    last_name_list TEXT[] := ARRAY['龙', '芳', '娜', '秀英', '敏'];
 BEGIN
     FOR i IN 1..user_count LOOP
         INSERT INTO mall.users (username, email, password_hash, first_name, last_name, phone, is_active)
@@ -1046,7 +1006,67 @@ BEGIN
     RAISE NOTICE '已批量导入 % 个用户', user_count;
 END;
 $$;
-COMMENT ON PROCEDURE bulk_import_users(INTEGER) IS '批量导入用户存储过程：生成指定数量的测试用户数据';
+COMMENT ON PROCEDURE mall.bulk_import_users(INTEGER) IS '批量导入用户存储过程：生成指定数量的测试用户数据';
+
+-- =====================================================
+-- =====================================================
+-- GIS SCHEMA - 函数
+-- =====================================================
+-- =====================================================
+
+-- =====================================================
+-- 函数定义（gis）
+-- =====================================================
+
+-- 计算两点之间距离（GIS函数）
+CREATE OR REPLACE FUNCTION gis.calculate_distance(lat1 FLOAT, lon1 FLOAT, lat2 FLOAT, lon2 FLOAT)
+RETURNS FLOAT AS $$
+BEGIN
+    RETURN ST_Distance(
+        ST_MakePoint(lon1, lat1)::geography,
+        ST_MakePoint(lon2, lat2)::geography
+    ) / 1000; -- 返回公里数
+END;
+$$ LANGUAGE plpgsql;
+COMMENT ON FUNCTION gis.calculate_distance(FLOAT, FLOAT, FLOAT, FLOAT) IS '计算两点距离函数：返回两个经纬度坐标之间的距离（公里）';
+
+-- 判断点是否在区域内（GIS函数）
+CREATE OR REPLACE FUNCTION gis.is_point_in_zone(point_lat FLOAT, point_lon FLOAT, zone_id INTEGER)
+RETURNS BOOLEAN AS $$
+DECLARE
+    point_geom GEOMETRY;
+    zone_geom GEOMETRY;
+BEGIN
+    point_geom := ST_SetSRID(ST_MakePoint(point_lon, point_lat), 4326);
+    zone_geom := (SELECT geometry FROM gis.delivery_zones WHERE delivery_zones.zone_id = gis.is_point_in_zone.zone_id);
+    
+    IF zone_geom IS NULL THEN
+        RETURN false;
+    END IF;
+    
+    RETURN ST_Contains(zone_geom, point_geom);
+END;
+$$ LANGUAGE plpgsql;
+COMMENT ON FUNCTION gis.is_point_in_zone(FLOAT, FLOAT, INTEGER) IS '判断点是否在区域内函数：检查坐标点是否在指定配送区域内';
+
+-- =====================================================
+-- =====================================================
+-- PUBLIC SCHEMA - 通用函数
+-- =====================================================
+-- =====================================================
+
+-- =====================================================
+-- 函数定义（public）
+-- =====================================================
+
+-- 生成唯一ID函数
+CREATE OR REPLACE FUNCTION public.generate_uuid()
+RETURNS UUID AS $$
+BEGIN
+    RETURN gen_random_uuid();
+END;
+$$ LANGUAGE plpgsql;
+COMMENT ON FUNCTION public.generate_uuid() IS '生成UUID函数：返回唯一的UUID值';
 
 -- =====================================================
 -- =====================================================
@@ -1068,17 +1088,31 @@ FROM information_schema.views
 WHERE table_schema = 'mall'
 UNION ALL
 SELECT
-    'Schema创建完成' AS 状态,
+    'Mall Schema创建完成' AS 状态,
     COUNT(*) AS 函数数量
 FROM information_schema.routines
-WHERE routine_schema IN ('mall', 'audit', 'gis')
+WHERE routine_schema = 'mall'
   AND routine_type = 'FUNCTION'
 UNION ALL
 SELECT
-    'Schema创建完成' AS 状态,
+    'GIS Schema创建完成' AS 状态,
+    COUNT(*) AS 函数数量
+FROM information_schema.routines
+WHERE routine_schema = 'gis'
+  AND routine_type = 'FUNCTION'
+UNION ALL
+SELECT
+    'Public Schema创建完成' AS 状态,
+    COUNT(*) AS 函数数量
+FROM information_schema.routines
+WHERE routine_schema = 'public'
+  AND routine_type = 'FUNCTION'
+UNION ALL
+SELECT
+    'Mall Schema创建完成' AS 状态,
     COUNT(*) AS 存储过程数量
 FROM information_schema.routines
-WHERE routine_schema IN ('mall', 'audit', 'gis')
+WHERE routine_schema = 'mall'
   AND routine_type = 'PROCEDURE';
 
 -- =====================================================
@@ -1086,7 +1120,7 @@ WHERE routine_schema IN ('mall', 'audit', 'gis')
 -- =====================================================
 -- 1. Mall Schema - 电商核心
 --    - 包含所有电商相关的表（用户、商品、订单等）
---    - 提供视图和触发器支持
+--    - 提供视图、触发器、函数和存储过程
 --    - 使用方式：SELECT * FROM mall.users;
 --
 -- 2. Audit Schema - 审计日志
@@ -1096,17 +1130,28 @@ WHERE routine_schema IN ('mall', 'audit', 'gis')
 --
 -- 3. GIS Schema - 地理位置
 --    - 包含PostGIS扩展和地理位置相关表
+--    - 提供GIS相关函数
 --    - 支持空间查询和地理计算
 --    - 使用方式：SELECT store_name, ST_AsText(geometry) FROM gis.store_locations;
 --
--- 4. 存储函数调用示例
---    SELECT get_user_total_spent(1);
---    SELECT get_product_avg_rating(10);
---    SELECT calculate_distance(39.9, 116.4, 31.2, 121.5);
+-- 4. Public Schema - 通用函数
+--    - 包含通用函数（如UUID生成）
+--    - 使用方式：SELECT public.generate_uuid();
 --
--- 5. 存储过程调用示例
---    CALL clean_expired_orders(30);
---    CALL batch_update_stock(ARRAY[1,2,3], ARRAY[10,5,8]);
---    CALL generate_monthly_sales_report(2024, 12);
---    CALL bulk_import_users(100);
+-- 5. Mall Schema 函数调用示例
+--    SELECT mall.get_user_total_spent(1);
+--    SELECT mall.get_product_avg_rating(10);
+--
+-- 6. Mall Schema 存储过程调用示例
+--    CALL mall.clean_expired_orders(30);
+--    CALL mall.batch_update_stock(ARRAY[1,2,3], ARRAY[10,5,8]);
+--    CALL mall.generate_monthly_sales_report(2024, 12);
+--    CALL mall.bulk_import_users(100);
+--
+-- 7. GIS Schema 函数调用示例
+--    SELECT gis.calculate_distance(39.9, 116.4, 31.2, 121.5);
+--    SELECT gis.is_point_in_zone(39.9, 116.4, 1);
+--
+-- 8. Public Schema 函数调用示例
+--    SELECT public.generate_uuid();
 -- =====================================================
