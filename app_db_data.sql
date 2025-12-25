@@ -2,7 +2,7 @@
 -- App_db数据库数据插入脚本
 -- 数据库名称: app_db
 -- 字符集: UTF8
--- 版本: v1.0.0
+-- 版本: v1.1.0
 -- 创建日期: 2025-12-25
 -- 说明: 包含约10万用户数据
 -- =====================================================
@@ -54,7 +54,7 @@ INSERT INTO categories (category_id, name, description, parent_category_id, sort
 (35, '教育音像', '教育、音像', 32, 3, true, '2024-01-01 00:00:00');
 
 -- =====================================================
--- 插入商品数据 (1000个商品)
+-- 插入商品数据 (73个商品)
 -- =====================================================
 INSERT INTO products (product_id, category_id, name, description, price, stock_quantity, is_active, created_at) VALUES
 -- 电子产品
@@ -140,18 +140,6 @@ INSERT INTO products (product_id, category_id, name, description, price, stock_q
 (72, 35, '英语四级词汇', '英语学习资料', 35.00, 500, true, '2024-01-01 00:00:00'),
 (73, 35, '考研数学', '考研资料', 88.00, 300, true, '2024-01-01 00:00:00');
 
--- 继续插入更多商品（为了简洁，这里插入一些示例商品）
-INSERT INTO products (category_id, name, description, price, stock_quantity, is_active, created_at)
-SELECT
-    (random() * 35)::int + 1 AS category_id,
-    '商品' || (random() * 10000)::int AS name,
-    '这是商品' || (random() * 10000)::int || '的描述信息' AS description,
-    (random() * 5000)::decimal(10,2) + 9.99 AS price,
-    (random() * 500)::int + 10 AS stock_quantity,
-    true AS is_active,
-    '2024-01-01 00:00:00'::timestamp + (random() * 365)::int * INTERVAL '1 day' AS created_at
-FROM generate_series(1, 927);
-
 -- =====================================================
 -- 插入商品图片数据
 -- =====================================================
@@ -178,7 +166,7 @@ WHERE p.product_id > 73
   );
 
 -- =====================================================
--- 插入用户数据（约10万用户）
+-- 插入用户数据（10万用户）
 -- =====================================================
 -- 使用批量插入提高效率
 DO $$
@@ -196,9 +184,9 @@ BEGIN
             'user' || (batch_start * batch_size + generate_series)::text AS username,
             'user' || (batch_start * batch_size + generate_series)::text || '@example.com' AS email,
             'hashed_password_' || (random() * 1000000)::int::text AS password_hash,
-            first_name_list[(random() * 10)::int + 1] AS first_name,
-            last_name_list[(random() * 10)::int + 1] AS last_name,
-            phone_prefixes[(random() * 10)::int + 1] || lpad((random() * 100000000)::int::text, 8, '0') AS phone,
+            first_name_list[(random() * 9)::int + 1] AS first_name,
+            last_name_list[(random() * 9)::int + 1] AS last_name,
+            phone_prefixes[(random() * 9)::int + 1] || lpad((random() * 100000000)::int::text, 8, '0') AS phone,
             true AS is_active,
             '2024-01-01 00:00:00'::timestamp + (random() * 365)::int * INTERVAL '1 day' AS created_at,
             '2024-01-01 00:00:00'::timestamp + (random() * 365)::int * INTERVAL '1 day' AS updated_at
@@ -218,27 +206,70 @@ DO $$
 DECLARE
     user_record RECORD;
     address_count INTEGER;
-    city_list TEXT[] := ARRAY['北京市', '上海市', '广州市', '深圳市', '杭州市', '成都市', '武汉市', '西安市', '南京市', '重庆市'];
-    district_list TEXT[] := ARRAY['朝阳区', '海淀区', '浦东新区', '黄浦区', '天河区', '越秀区', '福田区', '南山区', '西湖区', '滨江区'];
-    street_list TEXT[] := ARRAY['人民路', '建设路', '解放路', '中山路', '和平路', '胜利路', '友谊路', '光明路', '幸福路', '团结路'];
+    addr_idx INTEGER;
+    phone_prefixes TEXT[] := ARRAY['138', '139', '150', '151', '152', '185', '186', '187', '188', '189'];
 BEGIN
-    FOR user_record IN SELECT user_id FROM users LOOP
+    FOR user_record IN SELECT user_id, first_name, last_name, phone, created_at, updated_at FROM users LOOP
         address_count := (random() * 4)::int + 2;
 
         INSERT INTO addresses (user_id, recipient_name, phone, province, city, district, street_address, postal_code, is_default, created_at)
         SELECT
-            user_record.user_id AS user_id,
-            u.first_name || u.last_name AS recipient_name,
-            u.phone AS phone,
-            '北京市' AS province,
-            city_list[(random() * 10)::int + 1] AS city,
-            district_list[(random() * 10)::int + 1] AS district,
-            street_list[(random() * 10)::int + 1] || (random() * 999)::int::text AS street_address,
+            user_record.user_id,
+            COALESCE(user_record.first_name, '') || COALESCE(user_record.last_name, '') AS recipient_name,
+            COALESCE(user_record.phone,
+                phone_prefixes[(random() * 9)::int + 1] || lpad((random() * 100000000)::int::text, 8, '0')
+            ) AS phone,
+            CASE (random() * 9)::int
+                WHEN 0 THEN '北京市'
+                WHEN 1 THEN '上海市'
+                WHEN 2 THEN '广东省'
+                WHEN 3 THEN '浙江省'
+                WHEN 4 THEN '四川省'
+                WHEN 5 THEN '湖北省'
+                WHEN 6 THEN '陕西省'
+                WHEN 7 THEN '江苏省'
+                ELSE '重庆市'
+            END AS province,
+            CASE (random() * 9)::int
+                WHEN 0 THEN '北京市'
+                WHEN 1 THEN '上海市'
+                WHEN 2 THEN '广州市'
+                WHEN 3 THEN '深圳市'
+                WHEN 4 THEN '杭州市'
+                WHEN 5 THEN '成都市'
+                WHEN 6 THEN '武汉市'
+                WHEN 7 THEN '西安市'
+                WHEN 8 THEN '南京市'
+                ELSE '重庆市'
+            END AS city,
+            CASE (random() * 9)::int
+                WHEN 0 THEN '朝阳区'
+                WHEN 1 THEN '海淀区'
+                WHEN 2 THEN '浦东新区'
+                WHEN 3 THEN '黄浦区'
+                WHEN 4 THEN '天河区'
+                WHEN 5 THEN '越秀区'
+                WHEN 6 THEN '福田区'
+                WHEN 7 THEN '南山区'
+                WHEN 8 THEN '西湖区'
+                ELSE '滨江区'
+            END AS district,
+            CASE (random() * 9)::int
+                WHEN 0 THEN '人民路'
+                WHEN 1 THEN '建设路'
+                WHEN 2 THEN '解放路'
+                WHEN 3 THEN '中山路'
+                WHEN 4 THEN '和平路'
+                WHEN 5 THEN '胜利路'
+                WHEN 6 THEN '友谊路'
+                WHEN 7 THEN '光明路'
+                WHEN 8 THEN '幸福路'
+                ELSE '团结路'
+            END || (random() * 999)::int::text AS street_address,
             lpad((random() * 999999)::int::text, 6, '0') AS postal_code,
             (generate_series = 1) AS is_default,
-            '2024-01-01 00:00:00'::timestamp + (random() * 365)::int * INTERVAL '1 day' AS created_at
-        FROM users u
-        CROSS JOIN generate_series(1, address_count);
+            user_record.created_at + (random() * 365)::int * INTERVAL '1 day' AS created_at
+        FROM generate_series(1, address_count);
     END LOOP;
 END $$;
 
@@ -249,24 +280,28 @@ DO $$
 DECLARE
     user_record RECORD;
     gender_list CHAR(1)[] := ARRAY['男', '女'];
+    user_created_at TIMESTAMP;
+    user_updated_at TIMESTAMP;
 BEGIN
-    FOR user_record IN SELECT user_id FROM users LIMIT 50000 LOOP
+    FOR user_record IN SELECT user_id, created_at, updated_at FROM users LIMIT 50000 LOOP
+        user_created_at := user_record.created_at;
+        user_updated_at := user_record.updated_at;
+
         INSERT INTO user_profiles (user_id, gender, birth_date, avatar_url, bio, created_at, updated_at)
-        SELECT
-            user_record.user_id AS user_id,
-            gender_list[(random() * 2)::int + 1] AS gender,
-            '1990-01-01'::date + (random() * 365 * 30)::int * INTERVAL '1 day' AS birth_date,
-            'https://example.com/avatars/' || user_record.user_id || '.jpg' AS avatar_url,
-            '这是用户' || user_record.user_id || '的个人简介' AS bio,
-            user_record.created_at AS created_at,
-            user_record.updated_at AS updated_at
-        FROM users
-        WHERE user_id = user_record.user_id;
+        VALUES (
+            user_record.user_id,
+            gender_list[(random() * 1)::int + 1],
+            '1990-01-01'::date + (random() * 365 * 30)::int * INTERVAL '1 day',
+            'https://example.com/avatars/' || user_record.user_id || '.jpg',
+            '这是用户' || user_record.user_id || '的个人简介',
+            user_created_at,
+            user_updated_at
+        );
     END LOOP;
 END $$;
 
 -- =====================================================
--- 插入订单数据（约10万订单）
+-- 插入订单数据（10万订单）
 -- =====================================================
 DO $$
 DECLARE
@@ -277,29 +312,39 @@ DECLARE
     order_date TIMESTAMP;
     user_ids INTEGER[];
     address_ids INTEGER[];
+    addr_count INTEGER;
 BEGIN
-    -- 随机选择10000个活跃用户和他们的地址
+    -- 随机选择10000个活跃用户
     SELECT array_agg(user_id) INTO user_ids
     FROM users
     WHERE is_active = true
     ORDER BY random()
     LIMIT 10000;
 
+    -- 获取这些用户的地址
     SELECT array_agg(address_id) INTO address_ids
     FROM addresses
-    WHERE address_id = ANY(user_ids)
+    WHERE user_id = ANY(user_ids)
     ORDER BY random();
+
+    -- 检查地址数量
+    addr_count := COALESCE(array_length(address_ids, 1), 0);
+
+    IF addr_count = 0 THEN
+        RAISE NOTICE '警告：没有找到地址数据，跳过订单插入';
+        RETURN;
+    END IF;
 
     FOR batch_start IN 0..(total_orders/batch_size)-1 LOOP
         order_date := '2024-01-01 00:00:00'::timestamp + (batch_start * batch_size + random()) * INTERVAL '1 second';
 
         INSERT INTO orders (user_id, address_id, order_number, total_amount, status, created_at, updated_at)
         SELECT
-            user_ids[(random() * 10000)::int + 1] AS user_id,
-            address_ids[(random() * array_length(address_ids, 1))::int] AS address_id,
-            'ORD' || TO_CHAR(order_date, 'YYYYMMDDHH24MISS') || lpad(batch_start * batch_size + generate_series, 6, '0') AS order_number,
+            user_ids[(random() * 9999)::int + 1] AS user_id,
+            address_ids[(random() * (addr_count - 1))::int + 1] AS address_id,
+            'ORD' || TO_CHAR(order_date, 'YYYYMMDDHH24MISS') || lpad((batch_start * batch_size + generate_series)::text, 6, '0') AS order_number,
             (random() * 5000)::decimal(10,2) + 50.00 AS total_amount,
-            status_list[(random() * 6)::int + 1] AS status,
+            status_list[(random() * 5)::int + 1] AS status,
             order_date AS created_at,
             order_date + INTERVAL '1 day' AS updated_at
         FROM generate_series(1, batch_size);
@@ -319,27 +364,38 @@ DECLARE
     order_record RECORD;
     item_count INTEGER;
     product_ids INTEGER[];
+    selected_product_id INTEGER;
+    product_count INTEGER;
 BEGIN
     -- 获取所有商品ID
     SELECT array_agg(product_id) INTO product_ids
     FROM products
     WHERE is_active = true;
 
-    FOR order_record IN SELECT order_id, total_amount FROM orders LIMIT 50000 LOOP
+    product_count := COALESCE(array_length(product_ids, 1), 0);
+
+    IF product_count = 0 THEN
+        RAISE NOTICE '警告：没有找到商品数据，跳过订单项插入';
+        RETURN;
+    END IF;
+
+    FOR order_record IN SELECT order_id, total_amount, created_at FROM orders LIMIT 50000 LOOP
         item_count := (random() * 5)::int + 1;
 
-        INSERT INTO order_items (order_id, product_id, quantity, unit_price, subtotal, created_at)
-        SELECT
-            order_record.order_id AS order_id,
-            product_ids[(random() * 1000)::int + 1] AS product_id,
-            (random() * 5)::int + 1 AS quantity,
-            p.price AS unit_price,
-            p.price * ((random() * 5)::int + 1) AS subtotal,
-            order_record.created_at AS created_at
-        FROM products p
-        CROSS JOIN generate_series(1, item_count)
-        WHERE p.product_id = product_ids[(random() * 1000)::int + 1]
-        LIMIT item_count;
+        FOR item_idx IN 1..item_count LOOP
+            selected_product_id := product_ids[(random() * (product_count - 1))::int + 1];
+
+            INSERT INTO order_items (order_id, product_id, quantity, unit_price, subtotal, created_at)
+            SELECT
+                order_record.order_id,
+                selected_product_id,
+                (random() * 5)::int + 1,
+                price,
+                price * ((random() * 5)::int + 1),
+                order_record.created_at
+            FROM products
+            WHERE product_id = selected_product_id;
+        END LOOP;
     END LOOP;
 END $$;
 
@@ -349,29 +405,44 @@ END $$;
 DO $$
 DECLARE
     order_record RECORD;
-    status_history_list VARCHAR(50)[][] := ARRAY[
-        ARRAY['pending', 'paid'],
-        ARRAY['pending', 'paid', 'shipped'],
-        ARRAY['pending', 'paid', 'shipped', 'delivered'],
-        ARRAY['pending', 'cancelled'],
-        ARRAY['pending', 'paid', 'refunded']
-    ];
+    history_idx INTEGER;
+    history_count INTEGER;
+    status_array VARCHAR(50)[];
 BEGIN
     FOR order_record IN SELECT order_id, status, created_at FROM orders LIMIT 30000 LOOP
-        INSERT INTO order_status_history (order_id, status, remark, created_at)
-        SELECT
-            order_record.order_id AS order_id,
-            status_array[generate_series] AS status,
-            '订单状态变更为 ' || status_array[generate_series] AS remark,
-            order_record.created_at + (generate_series - 1) * INTERVAL '1 day' AS created_at
-        FROM (
-            SELECT ARRAY(
-                SELECT unnest(status_history_list[(random() * 5)::int + 1])
-            ) AS status_array
-        ) t
-        CROSS JOIN generate_series(1, (SELECT array_length(status_history_list[(random() * 5)::int + 1], 1)))
-        WHERE generate_series <= (SELECT array_length(status_history_list[(random() * 5)::int + 1], 1))
-        LIMIT 1;
+        -- 根据订单状态生成历史记录
+        IF order_record.status = 'pending' THEN
+            status_array := ARRAY['pending'];
+            history_count := 1;
+        ELSIF order_record.status = 'paid' THEN
+            status_array := ARRAY['pending', 'paid'];
+            history_count := 2;
+        ELSIF order_record.status = 'shipped' THEN
+            status_array := ARRAY['pending', 'paid', 'shipped'];
+            history_count := 3;
+        ELSIF order_record.status = 'delivered' THEN
+            status_array := ARRAY['pending', 'paid', 'shipped', 'delivered'];
+            history_count := 4;
+        ELSIF order_record.status = 'cancelled' THEN
+            status_array := ARRAY['pending', 'cancelled'];
+            history_count := 2;
+        ELSIF order_record.status = 'refunded' THEN
+            status_array := ARRAY['pending', 'paid', 'refunded'];
+            history_count := 3;
+        ELSE
+            status_array := ARRAY['pending'];
+            history_count := 1;
+        END IF;
+        
+        FOR history_idx IN 1..history_count LOOP
+            INSERT INTO order_status_history (order_id, status, remark, created_at)
+            VALUES (
+                order_record.order_id,
+                status_array[history_idx],
+                '订单状态变更为 ' || status_array[history_idx],
+                order_record.created_at + (history_idx - 1) * INTERVAL '1 day'
+            );
+        END LOOP;
     END LOOP;
 END $$;
 
@@ -382,27 +453,28 @@ DO $$
 DECLARE
     order_record RECORD;
     payment_method_list VARCHAR(50)[] := ARRAY['微信支付', '支付宝', '信用卡', '借记卡', '余额支付'];
-    payment_status VARCHAR(50)[] := ARRAY['pending', 'success', 'failed', 'refunded'];
 BEGIN
-    FOR order_record IN SELECT order_id, total_amount, status, created_at FROM orders WHERE status IN ('paid', 'shipped', 'delivered', 'refunded') LIMIT 50000 LOOP
+    FOR order_record IN SELECT order_id, total_amount, status, created_at FROM orders
+                       WHERE status IN ('paid', 'shipped', 'delivered', 'refunded')
+                       LIMIT 50000 LOOP
+
         INSERT INTO payments (order_id, payment_method, amount, status, transaction_id, created_at)
-        SELECT
-            order_record.order_id AS order_id,
-            payment_method_list[(random() * 5)::int + 1] AS payment_method,
-            order_record.total_amount AS amount,
+        VALUES (
+            order_record.order_id,
+            payment_method_list[(random() * 4)::int + 1],
+            order_record.total_amount,
             CASE
                 WHEN order_record.status = 'refunded' THEN 'refunded'
                 ELSE 'success'
-            END AS status,
-            'TXN' || TO_CHAR(order_record.created_at, 'YYYYMMDDHH24MISS') || order_record.order_id AS transaction_id,
-            order_record.created_at + INTERVAL '1 hour' AS created_at
-        FROM orders
-        WHERE order_id = order_record.order_id;
+            END,
+            'TXN' || TO_CHAR(order_record.created_at, 'YYYYMMDDHH24MISS') || order_record.order_id,
+            order_record.created_at + INTERVAL '1 hour'
+        );
     END LOOP;
 END $$;
 
 -- =====================================================
--- 插入评论数据
+-- 插入评论数据（5万评论）
 -- =====================================================
 DO $$
 DECLARE
@@ -424,11 +496,11 @@ BEGIN
     FOR batch_start IN 0..(total_reviews/batch_size)-1 LOOP
         INSERT INTO reviews (user_id, product_id, rating, title, content, is_verified, created_at, updated_at)
         SELECT
-            (random() * 100000)::int + 1 AS user_id,
-            (random() * 1000)::int + 1 AS product_id,
-            (random() * 5)::int + 1 AS rating,
-            title_list[(random() * 8)::int + 1] AS title,
-            content_list[(random() * 8)::int + 1] AS content,
+            (random() * 99999)::int + 1 AS user_id,
+            (random() * 72)::int + 1 AS product_id,
+            (random() * 4)::int + 1 AS rating,
+            title_list[(random() * 7)::int + 1] AS title,
+            content_list[(random() * 7)::int + 1] AS content,
             (random() > 0.5) AS is_verified,
             '2024-01-01 00:00:00'::timestamp + (random() * 365)::int * INTERVAL '1 day' AS created_at,
             '2024-01-01 00:00:00'::timestamp + (random() * 365)::int * INTERVAL '1 day' AS updated_at
@@ -444,16 +516,19 @@ END $$;
 -- =====================================================
 -- 重置序列值
 -- =====================================================
-SELECT setval('users_user_id_seq', (SELECT MAX(user_id) FROM users));
-SELECT setval('addresses_address_id_seq', (SELECT MAX(address_id) FROM addresses));
-SELECT setval('user_profiles_profile_id_seq', (SELECT MAX(profile_id) FROM user_profiles));
-SELECT setval('products_product_id_seq', (SELECT MAX(product_id) FROM products));
-SELECT setval('product_images_image_id_seq', (SELECT MAX(image_id) FROM product_images));
-SELECT setval('orders_order_id_seq', (SELECT MAX(order_id) FROM orders));
-SELECT setval('order_items_order_item_id_seq', (SELECT MAX(order_item_id) FROM order_items));
-SELECT setval('order_status_history_history_id_seq', (SELECT MAX(history_id) FROM order_status_history));
-SELECT setval('payments_payment_id_seq', (SELECT MAX(payment_id) FROM payments));
-SELECT setval('reviews_review_id_seq', (SELECT MAX(review_id) FROM reviews));
+DO $$
+BEGIN
+    PERFORM setval('users_user_id_seq', (SELECT COALESCE(MAX(user_id), 1) FROM users));
+    PERFORM setval('addresses_address_id_seq', (SELECT COALESCE(MAX(address_id), 1) FROM addresses));
+    PERFORM setval('user_profiles_profile_id_seq', (SELECT COALESCE(MAX(profile_id), 1) FROM user_profiles));
+    PERFORM setval('products_product_id_seq', (SELECT COALESCE(MAX(product_id), 1) FROM products));
+    PERFORM setval('product_images_image_id_seq', (SELECT COALESCE(MAX(image_id), 1) FROM product_images));
+    PERFORM setval('orders_order_id_seq', (SELECT COALESCE(MAX(order_id), 1) FROM orders));
+    PERFORM setval('order_items_order_item_id_seq', (SELECT COALESCE(MAX(order_item_id), 1) FROM order_items));
+    PERFORM setval('order_status_history_history_id_seq', (SELECT COALESCE(MAX(history_id), 1) FROM order_status_history));
+    PERFORM setval('payments_payment_id_seq', (SELECT COALESCE(MAX(payment_id), 1) FROM payments));
+    PERFORM setval('reviews_review_id_seq', (SELECT COALESCE(MAX(review_id), 1) FROM reviews));
+END $$;
 
 -- =====================================================
 -- 数据插入完成
