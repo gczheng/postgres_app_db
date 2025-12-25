@@ -65,6 +65,14 @@ App_db v2.0 是一个典型的大型 Web 应用数据库示例，模拟了电商
 - AUDIT Schema: 1000审计日志、5000登录日志、2000数据变更历史
 - GIS Schema: 50门店位置、10配送区域、100物流轨迹、20热点区域
 
+### app_db_user_grant.sql
+业务账号创建和授权脚本（v2.0），包含：
+- 创建 app_user_rw 读写账号（适合应用服务）
+- 创建 app_user_ro 只读账号（适合报表查询、数据分析）
+- 授予 mall、audit、gis 三个 Schema 的相应权限
+- 授予函数和存储过程执行权限
+- 配置默认权限（适用于未来新建的表）
+
 ## 安装步骤
 
 ### 前置条件
@@ -76,6 +84,133 @@ App_db v2.0 是一个典型的大型 Web 应用数据库示例，模拟了电商
    sudo yum install postgis
    ```
 
+### 创建业务账号
+
+使用 postgres 超级用户创建业务账号并授权：
+
+```bash
+psql -U postgres -d app_db -f app_db_user_grant.sql
+```
+
+脚本将创建两个不同权限级别的业务账号：
+
+| 账号名 | 密码 | 权限级别 | 适用场景 |
+|--------|------|---------|---------|
+| app_user_rw | AppUserRw@2025 | 读写权限 | 应用服务、业务操作 |
+| app_user_ro | AppUserRo@2025 | 只读权限 | 报表查询、数据分析 |
+
+**权限说明：**
+- **app_user_rw**：拥有 mall Schema 的 SELECT/INSERT/UPDATE/DELETE 权限，audit 和 gis Schema 的 SELECT 权限
+- **app_user_ro**：仅拥有所有 Schema 的 SELECT 权限，无法执行 INSERT/UPDATE/DELETE 操作
+
+### 快速创建和授权（独立 SQL 语句）
+
+如果需要手动创建账号和授权，可以直接在 psql 中执行以下 SQL 语句：
+
+```sql
+-- =====================================================
+-- 创建 app_user_rw 读写账号
+-- =====================================================
+
+-- 1. 创建用户
+CREATE USER app_user_rw WITH PASSWORD 'AppUserRw@2025';
+
+-- 2. 授予连接数据库权限
+GRANT CONNECT ON DATABASE app_db TO app_user_rw;
+
+-- 3. 授予 Schema 使用权限
+GRANT USAGE ON SCHEMA mall TO app_user_rw;
+GRANT USAGE ON SCHEMA audit TO app_user_rw;
+GRANT USAGE ON SCHEMA gis TO app_user_rw;
+
+-- 4. 授予表权限（mall 读写，audit/gis 只读）
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA mall TO app_user_rw;
+GRANT SELECT ON ALL TABLES IN SCHEMA audit TO app_user_rw;
+GRANT SELECT ON ALL TABLES IN SCHEMA gis TO app_user_rw;
+
+-- 5. 授予默认权限（适用于未来新建的表）
+ALTER DEFAULT PRIVILEGES IN SCHEMA mall GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_user_rw;
+ALTER DEFAULT PRIVILEGES IN SCHEMA audit GRANT SELECT ON TABLES TO app_user_rw;
+ALTER DEFAULT PRIVILEGES IN SCHEMA gis GRANT SELECT ON TABLES TO app_user_rw;
+
+-- 6. 授予序列权限
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA mall TO app_user_rw;
+ALTER DEFAULT PRIVILEGES IN SCHEMA mall GRANT USAGE, SELECT ON SEQUENCES TO app_user_rw;
+
+-- 7. 授予函数执行权限
+GRANT EXECUTE ON FUNCTION public.generate_uuid() TO app_user_rw;
+GRANT EXECUTE ON FUNCTION public.calculate_distance(FLOAT, FLOAT, FLOAT, FLOAT) TO app_user_rw;
+GRANT EXECUTE ON FUNCTION public.is_point_in_zone(FLOAT, FLOAT, INTEGER) TO app_user_rw;
+GRANT EXECUTE ON FUNCTION public.get_user_total_spent(INTEGER) TO app_user_rw;
+GRANT EXECUTE ON FUNCTION public.get_product_avg_rating(INTEGER) TO app_user_rw;
+
+-- 8. 授予存储过程执行权限
+GRANT EXECUTE ON PROCEDURE public.clean_expired_orders(INTEGER) TO app_user_rw;
+GRANT EXECUTE ON PROCEDURE public.batch_update_stock(INTEGER[], INTEGER[]) TO app_user_rw;
+GRANT EXECUTE ON PROCEDURE public.generate_monthly_sales_report(INTEGER, INTEGER) TO app_user_rw;
+GRANT EXECUTE ON PROCEDURE public.bulk_import_users(INTEGER) TO app_user_rw;
+
+-- 9. 授予视图查询权限
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO app_user_rw;
+
+-- =====================================================
+-- 创建 app_user_ro 只读账号
+-- =====================================================
+
+-- 1. 创建用户
+CREATE USER app_user_ro WITH PASSWORD 'AppUserRo@2025';
+
+-- 2. 授予连接数据库权限
+GRANT CONNECT ON DATABASE app_db TO app_user_ro;
+
+-- 3. 授予 Schema 使用权限
+GRANT USAGE ON SCHEMA mall TO app_user_ro;
+GRANT USAGE ON SCHEMA audit TO app_user_ro;
+GRANT USAGE ON SCHEMA gis TO app_user_ro;
+
+-- 4. 授予表权限（只读）
+GRANT SELECT ON ALL TABLES IN SCHEMA mall TO app_user_ro;
+GRANT SELECT ON ALL TABLES IN SCHEMA audit TO app_user_ro;
+GRANT SELECT ON ALL TABLES IN SCHEMA gis TO app_user_ro;
+
+-- 5. 授予默认权限（适用于未来新建的表）
+ALTER DEFAULT PRIVILEGES IN SCHEMA mall GRANT SELECT ON TABLES TO app_user_ro;
+ALTER DEFAULT PRIVILEGES IN SCHEMA audit GRANT SELECT ON TABLES TO app_user_ro;
+ALTER DEFAULT PRIVILEGES IN SCHEMA gis GRANT SELECT ON TABLES TO app_user_ro;
+
+-- 6. 授予序列使用权限
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA mall TO app_user_ro;
+ALTER DEFAULT PRIVILEGES IN SCHEMA mall GRANT USAGE ON SEQUENCES TO app_user_ro;
+
+-- 7. 授予查询相关函数执行权限
+GRANT EXECUTE ON FUNCTION public.calculate_distance(FLOAT, FLOAT, FLOAT, FLOAT) TO app_user_ro;
+GRANT EXECUTE ON FUNCTION public.is_point_in_zone(FLOAT, FLOAT, INTEGER) TO app_user_ro;
+GRANT EXECUTE ON FUNCTION public.get_user_total_spent(INTEGER) TO app_user_ro;
+GRANT EXECUTE ON FUNCTION public.get_product_avg_rating(INTEGER) TO app_user_ro;
+
+-- 8. 授予视图查询权限
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO app_user_ro;
+
+-- =====================================================
+-- 验证账号创建
+-- =====================================================
+
+-- 查看创建的用户
+SELECT rolname, rolcreater, rolcanlogin 
+FROM pg_roles 
+WHERE rolname IN ('app_user_rw', 'app_user_ro');
+
+-- 查看连接权限
+SELECT * FROM pg_database_acl WHERE grantee = 'app_user_rw';
+SELECT * FROM pg_database_acl WHERE grantee = 'app_user_ro';
+
+-- 查看表权限
+SELECT table_schema, table_name, privilege_type, grantee
+FROM information_schema.table_privileges 
+WHERE grantee IN ('app_user_rw', 'app_user_ro')
+ORDER BY grantee, table_schema, table_name;
+```
+
 ### 方法一：使用 psql 命令行
 
 #### 1. 导入数据库结构
@@ -86,6 +221,11 @@ psql -U postgres -f app_db_schema_v2.sql
 #### 2. 导入示例数据
 ```bash
 psql -U postgres -d app_db -f app_db_data_v2.sql
+```
+
+#### 3. 创建业务账号并授权
+```bash
+psql -U postgres -d app_db -f app_db_user_grant.sql
 ```
 
 ### 方法二：使用 pgAdmin 图形化工具
@@ -103,6 +243,12 @@ psql -U postgres -d app_db -f app_db_data_v2.sql
 - 选择并打开 `app_db_data_v2.sql` 文件
 - 点击 `Execute` 按钮执行脚本
 - 等待执行完成（可能需要几分钟）
+
+#### 3. 创建业务账号并授权
+- 在 Query Tool 中点击 `Open File`
+- 选择并打开 `app_db_user_grant.sql` 文件
+- 点击 `Execute` 按钮执行脚本
+- 查看执行结果中的账号信息和权限说明
 
 ## 验证安装
 
@@ -156,6 +302,112 @@ GIS Schema (4张表):
 - logistics_tracks
 - hotspot_areas
 ```
+
+### 测试业务账号连接
+
+**1. 测试 app_user_rw（读写账号）**
+
+```bash
+# 使用 app_user_rw 连接测试
+psql -h localhost -U app_user_rw -d app_db
+# 密码: AppUserRw@2025
+```
+
+**2. 测试 app_user_ro（只读账号）**
+
+```bash
+# 使用 app_user_ro 连接测试
+psql -h localhost -U app_user_ro -d app_db
+# 密码: AppUserRo@2025
+```
+
+**使用 pgAdmin 连接：**
+
+| 配置项 | app_user_rw | app_user_ro |
+|--------|-------------|-------------|
+| 主机名 | localhost | localhost |
+| 端口 | 5432 | 5432 |
+| 数据库 | app_db | app_db |
+| 用户名 | app_user_rw | app_user_ro |
+| 密码 | AppUserRw@2025 | AppUserRo@2025 |
+
+### 验证 app_user 权限
+
+**验证 app_user_rw 权限：**
+
+```sql
+-- 使用 app_user_rw 连接
+psql -h localhost -U app_user_rw -d app_db
+
+-- 验证 Schema 使用权限
+SELECT * FROM information_schema.schema_privileges 
+WHERE grantee = 'app_user_rw';
+
+-- 验证表权限
+SELECT table_schema, table_name, privilege_type 
+FROM information_schema.table_privileges 
+WHERE grantee = 'app_user_rw'
+ORDER BY table_schema, table_name;
+
+-- 测试查询权限
+SELECT COUNT(*) FROM mall.users;
+SELECT COUNT(*) FROM audit.audit_logs;
+SELECT COUNT(*) FROM gis.store_locations;
+
+-- 测试写入权限（仅 app_user_rw）
+INSERT INTO mall.addresses (user_id, province, city, district, address, postal_code, is_default)
+VALUES (1, '北京市', '北京市', '朝阳区', '测试地址', '100000', false);
+
+-- 删除测试数据
+DELETE FROM mall.addresses WHERE address = '测试地址';
+```
+
+**验证 app_user_ro 权限：**
+
+```sql
+-- 使用 app_user_ro 连接
+psql -h localhost -U app_user_ro -d app_db
+
+-- 验证 Schema 使用权限
+SELECT * FROM information_schema.schema_privileges 
+WHERE grantee = 'app_user_ro';
+
+-- 验证表权限
+SELECT table_schema, table_name, privilege_type 
+FROM information_schema.table_privileges 
+WHERE grantee = 'app_user_ro'
+ORDER BY table_schema, table_name;
+
+-- 测试查询权限
+SELECT COUNT(*) FROM mall.users;
+SELECT COUNT(*) FROM audit.audit_logs;
+SELECT COUNT(*) FROM gis.store_locations;
+```
+
+### 业务账号权限对比
+
+| Schema | 表 | app_user_rw | app_user_ro |
+|--------|-----|-------------|-------------|
+| **mall** | users | SELECT/INSERT/UPDATE/DELETE | SELECT |
+| | addresses | SELECT/INSERT/UPDATE/DELETE | SELECT |
+| | user_profiles | SELECT/INSERT/UPDATE/DELETE | SELECT |
+| | categories | SELECT/INSERT/UPDATE/DELETE | SELECT |
+| | products | SELECT/INSERT/UPDATE/DELETE | SELECT |
+| | product_images | SELECT/INSERT/UPDATE/DELETE | SELECT |
+| | orders | SELECT/INSERT/UPDATE/DELETE | SELECT |
+| | order_items | SELECT/INSERT/UPDATE/DELETE | SELECT |
+| | order_status_history | SELECT/INSERT/UPDATE/DELETE | SELECT |
+| | payments | SELECT/INSERT/UPDATE/DELETE | SELECT |
+| | reviews | SELECT/INSERT/UPDATE/DELETE | SELECT |
+| **audit** | 所有表 | SELECT（只读） | SELECT（只读） |
+| **gis** | 所有表 | SELECT（只读） | SELECT（只读） |
+| **序列** | mall 序列 | USAGE/SELECT | USAGE |
+| **函数** | public 函数 | EXECUTE | EXECUTE（仅查询相关） |
+| **存储过程** | public 存储过程 | EXECUTE | 无 |
+
+**权限说明：**
+- **app_user_rw**：适用于应用服务层，可以进行业务数据的增删改查操作，但审计日志和地理信息只读
+- **app_user_ro**：适用于报表查询、数据分析、BI 工具等只读场景，确保数据安全
 
 ### 查看数据统计
 ```sql
@@ -541,6 +793,47 @@ TRUNCATE TABLE gis.store_locations CASCADE;
 psql -U postgres -c "DROP DATABASE app_db;"
 ```
 
+### 撤销业务账号权限并删除用户
+
+**撤销 app_user_rw 权限并删除：**
+
+```sql
+-- 使用 postgres 用户执行
+-- 1. 撤销所有权限
+REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA mall FROM app_user_rw;
+REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA audit FROM app_user_rw;
+REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA gis FROM app_user_rw;
+REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA mall FROM app_user_rw;
+REVOKE USAGE ON SCHEMA mall FROM app_user_rw;
+REVOKE USAGE ON SCHEMA audit FROM app_user_rw;
+REVOKE USAGE ON SCHEMA gis FROM app_user_rw;
+REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA public FROM app_user_rw;
+REVOKE EXECUTE ON ALL PROCEDURES IN SCHEMA public FROM app_user_rw;
+REVOKE CONNECT ON DATABASE app_db FROM app_user_rw;
+
+-- 2. 删除用户
+DROP USER app_user_rw;
+```
+
+**撤销 app_user_ro 权限并删除：**
+
+```sql
+-- 使用 postgres 用户执行
+-- 1. 撤销所有权限
+REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA mall FROM app_user_ro;
+REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA audit FROM app_user_ro;
+REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA gis FROM app_user_ro;
+REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA mall FROM app_user_ro;
+REVOKE USAGE ON SCHEMA mall FROM app_user_ro;
+REVOKE USAGE ON SCHEMA audit FROM app_user_ro;
+REVOKE USAGE ON SCHEMA gis FROM app_user_ro;
+REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA public FROM app_user_ro;
+REVOKE CONNECT ON DATABASE app_db FROM app_user_ro;
+
+-- 2. 删除用户
+DROP USER app_user_ro;
+```
+
 ## 常见问题
 
 ### 1. PostGIS 扩展未安装
@@ -589,7 +882,7 @@ SET maintenance_work_mem = '256MB';
 **解决方案**：
 ```sql
 -- 确保空间索引存在
-SELECT indexname FROM pg_indexes 
+SELECT indexname FROM pg_indexes
 WHERE schemaname = 'gis' AND indexname LIKE '%geometry%';
 
 -- 重建空间索引
@@ -597,6 +890,69 @@ REINDEX INDEX gis.idx_store_locations_geometry;
 
 -- 更新统计信息
 ANALYZE gis.store_locations;
+```
+
+### 6. 业务账号无法连接数据库
+**问题**：连接失败，提示认证失败
+
+**解决方案**：
+```sql
+-- 检查用户是否存在
+SELECT rolname FROM pg_roles WHERE rolname IN ('app_user_rw', 'app_user_ro');
+
+-- 如果不存在，重新创建
+CREATE USER app_user_rw WITH PASSWORD 'AppUserRw@2025';
+CREATE USER app_user_ro WITH PASSWORD 'AppUserRo@2025';
+
+-- 检查 pg_hba.conf 配置
+-- 确保包含以下配置：
+# IPv4 local connections:
+host    app_db          app_user_rw      127.0.0.1/32            md5
+host    app_db          app_user_ro      127.0.0.1/32            md5
+host    app_db          app_user_rw      192.168.0.0/16          md5
+host    app_db          app_user_ro      192.168.0.0/16          md5
+
+-- 修改后重启 PostgreSQL
+sudo systemctl restart postgresql
+```
+
+### 7. 业务账号权限不足
+**问题**：无法查询某些表或执行某些操作
+
+**解决方案**：
+```sql
+-- 使用 postgres 用户重新授权
+psql -U postgres -d app_db
+
+-- 重新授予 app_user_rw 权限
+GRANT USAGE ON SCHEMA mall TO app_user_rw;
+GRANT USAGE ON SCHEMA audit TO app_user_rw;
+GRANT USAGE ON SCHEMA gis TO app_user_rw;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA mall TO app_user_rw;
+GRANT SELECT ON ALL TABLES IN SCHEMA audit TO app_user_rw;
+GRANT SELECT ON ALL TABLES IN SCHEMA gis TO app_user_rw;
+
+-- 重新授予 app_user_ro 权限
+GRANT USAGE ON SCHEMA mall TO app_user_ro;
+GRANT USAGE ON SCHEMA audit TO app_user_ro;
+GRANT USAGE ON SCHEMA gis TO app_user_ro;
+GRANT SELECT ON ALL TABLES IN SCHEMA mall TO app_user_ro;
+GRANT SELECT ON ALL TABLES IN SCHEMA audit TO app_user_ro;
+GRANT SELECT ON ALL TABLES IN SCHEMA gis TO app_user_ro;
+```
+
+### 8. 修改业务账号密码
+**问题**：需要修改业务账号密码
+
+**解决方案**：
+```sql
+-- 方法一：使用 postgres 用户修改
+ALTER USER app_user_rw WITH PASSWORD 'NewPasswordRw@2025';
+ALTER USER app_user_ro WITH PASSWORD 'NewPasswordRo@2025';
+
+-- 方法二：使用 psql 命令行
+psql -U postgres -c "ALTER USER app_user_rw WITH PASSWORD 'NewPasswordRw@2025';"
+psql -U postgres -c "ALTER USER app_user_ro WITH PASSWORD 'NewPasswordRo@2025';"
 ```
 
 ## 版本对比
