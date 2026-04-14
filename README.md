@@ -1,4 +1,24 @@
-# App_db数据库使用说明 (v2.0)
+# App_db数据库使用说明 (v3.0)
+
+## 版本信息与技术支持
+
+### 版本信息
+
+- **版本号**：v3.0.0
+- **创建日期**：2026-04-14
+- **PostgreSQL版本**：建议使用 12.0 或更高版本
+- **PostGIS版本**：建议使用 3.0 或更高版本
+- **变更说明**：
+  - 移除了所有外键约束，提高了数据库操作的灵活性
+  - 采用多Schema设计：mall(电商核心)、audit(审计日志)、gis(地理位置)
+  - 集成了PostGIS扩展，支持地理位置数据
+  - 新增了审计日志和地理位置相关表结构
+
+### 技术支持
+
+如有问题，请参考文档或提交 Issue。
+
+---
 
 ## 目录
 
@@ -15,13 +35,12 @@
 11. [十一、清理数据](#十一清理数据)
 12. [十二、常见问题](#十二常见问题)
 13. [十三、版本对比](#十三版本对比)
-14. [十四、版本信息与技术支持](#十四版本信息与技术支持)
 
 ---
 
 ## 一、概述
 
-App_db v2.0 是一个典型的大型 Web 应用数据库示例，模拟了电商系统的业务模型，采用多 Schema 架构设计。包含电商核心（mall）、审计日志（audit）、地理位置（gis）三大模块，支持 PostGIS 空间数据处理。
+App_db v3.0 是一个典型的大型 Web 应用数据库示例，模拟了电商系统的业务模型，采用多 Schema 架构设计。包含电商核心（mall）、审计日志（audit）、地理位置（gis）三大模块，支持 PostGIS 空间数据处理。
 
 ---
 
@@ -64,9 +83,9 @@ App_db v2.0 是一个典型的大型 Web 应用数据库示例，模拟了电商
 
 ## 三、文件说明
 
-### 3.1 app_db_schema_v2.sql
+### 3.1 app_db_schema_v3.sql
 
-数据库结构定义脚本（v2.0），包含：
+数据库结构定义脚本（v3.0），包含：
 - 3个 Schema（mall, audit, gis）
 - 18个表（mall 11个，audit 3个，gis 4个）
 - 150个字段（mall 86个，audit 25个，gis 39个）
@@ -78,16 +97,16 @@ App_db v2.0 是一个典型的大型 Web 应用数据库示例，模拟了电商
 - 5个函数（mall 2个，gis 2个，public 1个）
 - 4个存储过程（mall schema）
 
-### 3.2 app_db_data_v2.sql
+### 3.2 app_db_data_v3.sql
 
-示例数据插入脚本（v2.0），包含：
+示例数据插入脚本（v3.0），包含：
 - **MALL Schema**：10万用户、40万地址、73商品、10万订单、17.5万订单项、5万支付、5万评论
 - **AUDIT Schema**：1000审计日志、5000登录日志、2000数据变更历史
 - **GIS Schema**：50门店位置、10配送区域、100物流轨迹、20热点区域
 
 ### 3.3 app_db_user_grant.sql
 
-业务账号创建和授权脚本（v2.0），包含：
+业务账号创建和授权脚本（v3.0），包含：
 - **创建 app_user_rw 读写账号**（适合应用服务）
   - Mall Schema：SELECT/INSERT/UPDATE/DELETE（10表 + 2视图）
   - Audit Schema：SELECT（3表）
@@ -298,12 +317,12 @@ ORDER BY grantee, routine_schema, routine_name;
 
 #### 1. 导入数据库结构
 ```bash
-psql -U postgres -f app_db_schema_v2.sql
+psql -U postgres -f app_db_schema_v3.sql
 ```
 
 #### 2. 导入示例数据
 ```bash
-psql -U postgres -d app_db -f app_db_data_v2.sql
+psql -U postgres -d app_db -f app_db_data_v3.sql
 ```
 
 #### 3. 创建业务账号并授权
@@ -317,13 +336,13 @@ psql -U postgres -d app_db -f app_db_user_grant.sql
 - 打开 pgAdmin
 - 连接到 PostgreSQL 服务器
 - 点击 `Tools` → `Query Tool`
-- 点击 `Open File` 按钮，选择 `app_db_schema_v2.sql`
+- 点击 `Open File` 按钮，选择 `app_db_schema_v3.sql`
 - 点击 `Execute`（闪电图标）执行脚本
 - 等待执行完成，检查 `Messages` 面板
 
 #### 2. 导入数据脚本
 - 在 Query Tool 中点击 `Open File`
-- 选择并打开 `app_db_data_v2.sql` 文件
+- 选择并打开 `app_db_data_v3.sql` 文件
 - 点击 `Execute` 按钮执行脚本
 - 等待执行完成（可能需要几分钟）
 
@@ -1168,20 +1187,7 @@ psql -U postgres -c "ALTER USER app_user_ro WITH PASSWORD 'NewPasswordRo@2025';"
 | 审计日志 | 无 | 有（3张表） |
 | 空间查询 | 不支持 | 支持（GIST 索引） |
 
----
 
-## 十四、版本信息与技术支持
-
-### 14.1 版本信息
-
-- **版本号**：v2.0.0
-- **创建日期**：2025-12-25
-- **PostgreSQL版本**：建议使用 12.0 或更高版本
-- **PostGIS版本**：建议使用 3.0 或更高版本
-
-### 14.2 技术支持
-
-如有问题，请参考文档或提交 Issue。
 
 ---
 
