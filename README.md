@@ -194,9 +194,9 @@ END $$;
 GRANT CONNECT ON DATABASE app_db TO app_user_rw;
 
 -- 3. 授予 Schema 使用权限
-GRANT USAGE ON SCHEMA mall TO app_user_rw;
-GRANT USAGE ON SCHEMA audit TO app_user_rw;
-GRANT USAGE ON SCHEMA gis TO app_user_rw;
+GRANT  USAGE, CREATE ON SCHEMA mall TO app_user_rw;
+GRANT  USAGE, CREATE ON SCHEMA audit TO app_user_rw;
+GRANT  USAGE, CREATE ON SCHEMA gis TO app_user_rw;
 
 -- 4. 授予表权限（mall 读写，audit/gis 只读）
 -- Mall Schema 表：users, addresses, user_profiles, categories, products, product_images, orders, order_items, order_status_history, payments, reviews
