@@ -104,26 +104,28 @@ App_db v3.0 是一个典型的大型 Web 应用数据库示例，模拟了电商
 - **AUDIT Schema**：1000审计日志、5000登录日志、2000数据变更历史
 - **GIS Schema**：50门店位置、10配送区域、100物流轨迹、20热点区域
 
-### 3.3 app_db_user_grant.sql
+### 3.3 app_db_user_grants_v3.sql
 
-业务账号创建和授权脚本（v3.0），包含：
-- **创建 app_user_rw 读写账号**（适合应用服务）
-  - Mall Schema：SELECT/INSERT/UPDATE/DELETE（10表 + 2视图）
-  - Audit Schema：SELECT（3表）
-  - GIS Schema：SELECT（4表）
+业务账号创建和授权脚本（v3.0），采用基于角色的权限管理方式，包含：
+- **角色(Role)创建**：
+  - `mall_owner`：业务所有者，拥有 Schema 所有权，可执行 DDL 操作
+  - `read_write_role`：读写角色，仅 DML 权限
+  - `read_only_role`：只读角色，仅 SELECT 权限
+- **业务账号创建**：
+  - `mall_owner`（业务所有者）：DDL 操作，数据库结构管理、发布变更
+  - `app_user_rw`（应用程序账号）：通过 `read_write_role` 赋予读写权限，适合应用服务、业务操作
+  - `app_user_ro`（只读账号）：通过 `read_only_role` 赋予只读权限，适合报表查询、数据分析
+  - `monitor_user`（运维监控账号）：用于监控工具连接，赋予 `pg_monitor` 权限
+  - `repl_user`（复制/备份账号）：用于主从复制和物理备份
+  - `dbadmin`（个人管理账号）：DBA 日常管理，继承 `mall_owner` 权限
+- **权限分配**：
+  - Mall Schema：app_user_rw（SELECT/INSERT/UPDATE/DELETE），app_user_ro（SELECT）
+  - Audit Schema：app_user_rw（SELECT），app_user_ro（SELECT）
+  - GIS Schema：app_user_rw（SELECT），app_user_ro（SELECT）
   - 函数执行：mall(2)、gis(2)、public(1)
   - 存储过程执行：mall(4)
   - 序列权限：USAGE/SELECT（10个序列）
-- **创建 app_user_ro 只读账号**（适合报表查询、数据分析）
-  - Mall Schema：SELECT（10表 + 2视图）
-  - Audit Schema：SELECT（3表）
-  - GIS Schema：SELECT（4表）
-  - 查询函数执行：mall(2)、gis(2)
-  - 无存储过程执行权限
-  - 序列权限：USAGE
-- 授予 mall、audit、gis 三个 Schema 的相应权限
-- 授予函数和存储过程执行权限
-- 配置默认权限（适用于未来新建的表）
+- **默认权限**：为未来新建的表配置默认权限
 
 ---
 
@@ -143,19 +145,27 @@ App_db v3.0 是一个典型的大型 Web 应用数据库示例，模拟了电商
 使用 postgres 超级用户创建业务账号并授权：
 
 ```bash
-psql -U postgres -d app_db -f app_db_user_grant.sql
+psql -U postgres -d app_db -f app_db_user_grants_v3.sql
 ```
 
-脚本将创建两个不同权限级别的业务账号：
+脚本将创建以下账号：
 
 | 账号名 | 密码 | 权限级别 | 适用场景 |
 |--------|------|---------|---------|
-| app_user_rw | AppUserRw@2025 | 读写权限 | 应用服务、业务操作 |
-| app_user_ro | AppUserRo@2025 | 只读权限 | 报表查询、数据分析 |
+| mall_owner | MallOwner@2026 | 业务所有者 | DDL 操作，数据库结构管理、发布变更 |
+| app_user_rw | AppUserRw@2026 | 读写权限 | 应用服务、业务操作 |
+| app_user_ro | AppUserRo@2026 | 只读权限 | 报表查询、数据分析 |
+| monitor_user | Monitor@2026 | 监控权限 | 监控工具连接 |
+| repl_user | Repl@2026 | 复制权限 | 主从复制、物理备份 |
+| dbadmin | DbAdmin@2026 | 管理权限 | DBA 日常管理 |
 
 **权限说明：**
-- **app_user_rw**：拥有 mall Schema 的 SELECT/INSERT/UPDATE/DELETE 权限，audit 和 gis Schema 的 SELECT 权限
-- **app_user_ro**：仅拥有所有 Schema 的 SELECT 权限，无法执行 INSERT/UPDATE/DELETE 操作
+- **mall_owner**：拥有 Schema 所有权，可执行 DDL 操作（建表、修改表结构、创建索引）
+- **app_user_rw**：通过 `read_write_role` 赋予权限，拥有 mall Schema 的 SELECT/INSERT/UPDATE/DELETE 权限，audit 和 gis Schema 的 SELECT 权限
+- **app_user_ro**：通过 `read_only_role` 赋予权限，仅拥有所有 Schema 的 SELECT 权限，无法执行 INSERT/UPDATE/DELETE 操作
+- **monitor_user**：赋予 `pg_monitor` 权限，用于监控工具连接
+- **repl_user**：拥有 `REPLICATION` 属性，用于主从复制和物理备份
+- **dbadmin**：继承 `mall_owner` 权限，用于 DBA 日常管理
 
 ### 4.3 快速创建和授权（独立 SQL 语句）
 
@@ -174,117 +184,128 @@ psql -U postgres -d app_db -f app_db_user_grant.sql
 
 #### 4.3.2 授权 SQL 语句
 
+**注意**：以下 SQL 语句为示例，实际使用请直接执行 `app_db_user_grants_v3.sql` 脚本，该脚本采用基于角色的权限管理方式，更加规范和安全。
+
 ```sql
 -- =====================================================
--- 创建 app_user_rw 读写账号
+-- 创建业务所有者角色
 -- =====================================================
-
--- 1. 创建用户（如果不存在）
 DO $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user_rw') THEN
-        CREATE USER app_user_rw WITH PASSWORD 'AppUserRw@2025';
-        RAISE NOTICE '用户 app_user_rw 已创建';
-    ELSE
-        RAISE NOTICE '用户 app_user_rw 已存在，跳过创建';
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'mall_owner') THEN
+        CREATE ROLE mall_owner WITH LOGIN PASSWORD 'MallOwner@2026';
+        RAISE NOTICE '业务所有者角色 mall_owner 已创建';
     END IF;
 END $$;
 
--- 2. 授予连接数据库权限
+-- 确保 Schema 存在并指定所有者
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'mall') THEN
+        EXECUTE 'CREATE SCHEMA mall AUTHORIZATION mall_owner';
+    ELSE
+        EXECUTE 'ALTER SCHEMA mall OWNER TO mall_owner';
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'audit') THEN
+        EXECUTE 'CREATE SCHEMA audit AUTHORIZATION mall_owner';
+    ELSE
+        EXECUTE 'ALTER SCHEMA audit OWNER TO mall_owner';
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'gis') THEN
+        EXECUTE 'CREATE SCHEMA gis AUTHORIZATION mall_owner';
+    ELSE
+        EXECUTE 'ALTER SCHEMA gis OWNER TO mall_owner';
+    END IF;
+END $$;
+
+-- =====================================================
+-- 创建角色(Role)
+-- =====================================================
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'read_write_role') THEN
+        CREATE ROLE read_write_role;
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'read_only_role') THEN
+        CREATE ROLE read_only_role;
+    END IF;
+END $$;
+
+-- =====================================================
+-- 创建 app_user_rw 读写账号
+-- =====================================================
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user_rw') THEN
+        CREATE USER app_user_rw WITH PASSWORD 'AppUserRw@2026';
+        GRANT read_write_role TO app_user_rw;
+        ALTER USER app_user_rw SET search_path = mall, audit, gis, public;
+    ELSE
+        GRANT read_write_role TO app_user_rw;
+        ALTER USER app_user_rw SET search_path = mall, audit, gis, public;
+    END IF;
+END $$;
+
 GRANT CONNECT ON DATABASE app_db TO app_user_rw;
-
--- 3. 授予 Schema 使用权限
-GRANT  USAGE, CREATE ON SCHEMA mall TO app_user_rw;
-GRANT  USAGE, CREATE ON SCHEMA audit TO app_user_rw;
-GRANT  USAGE, CREATE ON SCHEMA gis TO app_user_rw;
-
--- 4. 授予表权限（mall 读写，audit/gis 只读）
--- Mall Schema 表：users, addresses, user_profiles, categories, products, product_images, orders, order_items, order_status_history, payments, reviews
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA mall TO app_user_rw;
-
--- Audit Schema 表：audit_logs, login_logs, data_change_history
-GRANT SELECT ON ALL TABLES IN SCHEMA audit TO app_user_rw;
-
--- GIS Schema 表：store_locations, delivery_zones, logistics_tracks, hotspot_areas
-GRANT SELECT ON ALL TABLES IN SCHEMA gis TO app_user_rw;
-
--- 5. 授予默认权限（适用于未来新建的表）
-ALTER DEFAULT PRIVILEGES IN SCHEMA mall GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_user_rw;
-ALTER DEFAULT PRIVILEGES IN SCHEMA audit GRANT SELECT ON TABLES TO app_user_rw;
-ALTER DEFAULT PRIVILEGES IN SCHEMA gis GRANT SELECT ON TABLES TO app_user_rw;
-
--- 6. 授予序列权限（mall Schema 有10个序列）
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA mall TO app_user_rw;
-ALTER DEFAULT PRIVILEGES IN SCHEMA mall GRANT USAGE, SELECT ON SEQUENCES TO app_user_rw;
-
--- 7. 授予函数执行权限（mall、gis、public schema）
--- Mall Schema 函数
-GRANT EXECUTE ON FUNCTION mall.get_user_total_spent(INTEGER) TO app_user_rw;
-GRANT EXECUTE ON FUNCTION mall.get_product_avg_rating(INTEGER) TO app_user_rw;
--- GIS Schema 函数
-GRANT EXECUTE ON FUNCTION gis.calculate_distance(FLOAT, FLOAT, FLOAT, FLOAT) TO app_user_rw;
-GRANT EXECUTE ON FUNCTION gis.is_point_in_zone(FLOAT, FLOAT, INTEGER) TO app_user_rw;
--- Public Schema 通用函数
-GRANT EXECUTE ON FUNCTION public.generate_uuid() TO app_user_rw;
-
--- 8. 授予存储过程执行权限（mall schema）
-GRANT EXECUTE ON PROCEDURE mall.clean_expired_orders(INTEGER) TO app_user_rw;
-GRANT EXECUTE ON PROCEDURE mall.batch_update_stock(INTEGER[], INTEGER[]) TO app_user_rw;
-GRANT EXECUTE ON PROCEDURE mall.generate_monthly_sales_report(INTEGER, INTEGER) TO app_user_rw;
-GRANT EXECUTE ON PROCEDURE mall.bulk_import_users(INTEGER) TO app_user_rw;
 
 -- =====================================================
 -- 创建 app_user_ro 只读账号
 -- =====================================================
-
--- 1. 创建用户（如果不存在）
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user_ro') THEN
-        CREATE USER app_user_ro WITH PASSWORD 'AppUserRo@2025';
-        RAISE NOTICE '用户 app_user_ro 已创建';
+        CREATE USER app_user_ro WITH PASSWORD 'AppUserRo@2026';
+        GRANT read_only_role TO app_user_ro;
+        ALTER USER app_user_ro SET search_path = mall, audit, gis, public;
     ELSE
-        RAISE NOTICE '用户 app_user_ro 已存在，跳过创建';
+        GRANT read_only_role TO app_user_ro;
+        ALTER USER app_user_ro SET search_path = mall, audit, gis, public;
     END IF;
 END $$;
 
--- 2. 授予连接数据库权限
 GRANT CONNECT ON DATABASE app_db TO app_user_ro;
 
--- 3. 授予 Schema 使用权限
-GRANT USAGE ON SCHEMA mall TO app_user_ro;
-GRANT USAGE ON SCHEMA audit TO app_user_ro;
-GRANT USAGE ON SCHEMA gis TO app_user_ro;
+-- =====================================================
+-- 创建运维监控账号
+-- =====================================================
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'monitor_user') THEN
+        CREATE USER monitor_user WITH PASSWORD 'Monitor@2026';
+        GRANT pg_monitor TO monitor_user;
+    END IF;
+END $$;
 
--- 4. 授予表权限（只读）
--- Mall Schema 表：users, addresses, user_profiles, categories, products, product_images, orders, order_items, order_status_history, payments, reviews
-GRANT SELECT ON ALL TABLES IN SCHEMA mall TO app_user_ro;
+GRANT CONNECT ON DATABASE app_db TO monitor_user;
+GRANT CONNECT ON DATABASE postgres TO monitor_user;
 
--- Audit Schema 表：audit_logs, login_logs, data_change_history
-GRANT SELECT ON ALL TABLES IN SCHEMA audit TO app_user_ro;
+-- =====================================================
+-- 创建复制/备份账号
+-- =====================================================
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'repl_user') THEN
+        CREATE USER repl_user WITH REPLICATION PASSWORD 'Repl@2026';
+    END IF;
+END $$;
 
--- GIS Schema 表：store_locations, delivery_zones, logistics_tracks, hotspot_areas
-GRANT SELECT ON ALL TABLES IN SCHEMA gis TO app_user_ro;
+-- =====================================================
+-- 创建个人管理账号
+-- =====================================================
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'dbadmin') THEN
+        CREATE USER dbadmin WITH PASSWORD 'DbAdmin@2026';
+        GRANT mall_owner TO dbadmin;
+    ELSE
+        GRANT mall_owner TO dbadmin;
+    END IF;
+END $$;
 
--- 5. 授予默认权限（适用于未来新建的表）
-ALTER DEFAULT PRIVILEGES IN SCHEMA mall GRANT SELECT ON TABLES TO app_user_ro;
-ALTER DEFAULT PRIVILEGES IN SCHEMA audit GRANT SELECT ON TABLES TO app_user_ro;
-ALTER DEFAULT PRIVILEGES IN SCHEMA gis GRANT SELECT ON TABLES TO app_user_ro;
-
--- 6. 授予序列使用权限（需要序列权限以支持表查询）
-GRANT USAGE ON ALL SEQUENCES IN SCHEMA mall TO app_user_ro;
-ALTER DEFAULT PRIVILEGES IN SCHEMA mall GRANT USAGE ON SEQUENCES TO app_user_ro;
-
--- 7. 授予查询相关函数执行权限（mall、gis schema）
--- 注意：app_user_ro 不需要 generate_uuid() (仅用于写入)
--- Mall Schema 函数
-GRANT EXECUTE ON FUNCTION mall.get_user_total_spent(INTEGER) TO app_user_ro;
-GRANT EXECUTE ON FUNCTION mall.get_product_avg_rating(INTEGER) TO app_user_ro;
--- GIS Schema 函数
-GRANT EXECUTE ON FUNCTION gis.calculate_distance(FLOAT, FLOAT, FLOAT, FLOAT) TO app_user_ro;
-GRANT EXECUTE ON FUNCTION gis.is_point_in_zone(FLOAT, FLOAT, INTEGER) TO app_user_ro;
-
--- 注意：app_user_ro 不授予存储过程执行权限（存储过程用于修改数据）
+GRANT CONNECT ON DATABASE app_db TO dbadmin;
 
 -- =====================================================
 -- 验证账号创建
@@ -293,24 +314,15 @@ GRANT EXECUTE ON FUNCTION gis.is_point_in_zone(FLOAT, FLOAT, INTEGER) TO app_use
 -- 查看创建的用户
 SELECT rolname, rolcreater, rolcanlogin
 FROM pg_roles
-WHERE rolname IN ('app_user_rw', 'app_user_ro');
+WHERE rolname IN ('mall_owner', 'app_user_rw', 'app_user_ro', 'monitor_user', 'repl_user', 'dbadmin');
 
--- 查看连接权限
-SELECT datname, (SELECT rolname FROM pg_roles WHERE oid = grantee) as grantee, privilege_type
-FROM pg_database_acl
-WHERE (SELECT rolname FROM pg_roles WHERE oid = grantee) IN ('app_user_rw', 'app_user_ro');
-
--- 查看表权限
-SELECT table_schema, table_name, privilege_type, grantee
-FROM information_schema.table_privileges
-WHERE grantee IN ('app_user_rw', 'app_user_ro')
-ORDER BY grantee, table_schema, table_name;
-
--- 查看函数和存储过程权限
-SELECT routine_schema, routine_name, routine_type, privilege_type, grantee
-FROM information_schema.routine_privileges
-WHERE grantee IN ('app_user_rw', 'app_user_ro')
-ORDER BY grantee, routine_schema, routine_name;
+-- 查看角色成员关系
+SELECT r.rolname as role_name, m.rolname as member_name
+FROM pg_roles r
+JOIN pg_auth_members am ON r.oid = am.roleid
+JOIN pg_roles m ON am.member = m.oid
+WHERE r.rolname IN ('read_write_role', 'read_only_role', 'mall_owner')
+ORDER BY r.rolname, m.rolname;
 ```
 
 ### 4.4 方法一：使用 psql 命令行
@@ -327,7 +339,7 @@ psql -U postgres -d app_db -f app_db_data_v3.sql
 
 #### 3. 创建业务账号并授权
 ```bash
-psql -U postgres -d app_db -f app_db_user_grant.sql
+psql -U postgres -d app_db -f app_db_user_grants_v3.sql
 ```
 
 ### 4.5 方法二：使用 pgAdmin 图形化工具
@@ -348,7 +360,7 @@ psql -U postgres -d app_db -f app_db_user_grant.sql
 
 #### 3. 创建业务账号并授权
 - 在 Query Tool 中点击 `Open File`
-- 选择并打开 `app_db_user_grant.sql` 文件
+- 选择并打开 `app_db_user_grants_v3.sql` 文件
 - 点击 `Execute` 按钮执行脚本
 - 查看执行结果中的账号信息和权限说明
 
@@ -459,7 +471,7 @@ GIS Schema (4张表):
 ```bash
 # 使用 app_user_rw 连接测试
 psql -h localhost -U app_user_rw -d app_db
-# 密码: AppUserRw@2025
+# 密码: AppUserRw@2026
 ```
 
 #### 6.3.2 测试 app_user_ro（只读账号）
@@ -467,7 +479,7 @@ psql -h localhost -U app_user_rw -d app_db
 ```bash
 # 使用 app_user_ro 连接测试
 psql -h localhost -U app_user_ro -d app_db
-# 密码: AppUserRo@2025
+# 密码: AppUserRo@2026
 ```
 
 #### 6.3.3 使用 pgAdmin 连接
@@ -478,7 +490,7 @@ psql -h localhost -U app_user_ro -d app_db
 | 端口 | 5432 | 5432 |
 | 数据库 | app_db | app_db |
 | 用户名 | app_user_rw | app_user_ro |
-| 密码 | AppUserRw@2025 | AppUserRo@2025 |
+| 密码 | AppUserRw@2026 | AppUserRo@2026 |
 
 ### 6.4 验证 app_user 权限
 
@@ -1112,8 +1124,8 @@ ANALYZE gis.store_locations;
 SELECT rolname FROM pg_roles WHERE rolname IN ('app_user_rw', 'app_user_ro');
 
 -- 如果不存在，重新创建
-CREATE USER app_user_rw WITH PASSWORD 'AppUserRw@2025';
-CREATE USER app_user_ro WITH PASSWORD 'AppUserRo@2025';
+CREATE USER app_user_rw WITH PASSWORD 'AppUserRw@2026';
+CREATE USER app_user_ro WITH PASSWORD 'AppUserRo@2026';
 
 -- 检查 pg_hba.conf 配置
 -- 确保包含以下配置：
@@ -1160,12 +1172,20 @@ GRANT SELECT ON ALL TABLES IN SCHEMA gis TO app_user_ro;
 **解决方案：**
 ```sql
 -- 方法一：使用 postgres 用户修改
-ALTER USER app_user_rw WITH PASSWORD 'NewPasswordRw@2025';
-ALTER USER app_user_ro WITH PASSWORD 'NewPasswordRo@2025';
+ALTER USER mall_owner WITH PASSWORD 'MallOwner@2026';
+ALTER USER app_user_rw WITH PASSWORD 'AppUserRw@2026';
+ALTER USER app_user_ro WITH PASSWORD 'AppUserRo@2026';
+ALTER USER monitor_user WITH PASSWORD 'Monitor@2026';
+ALTER USER repl_user WITH PASSWORD 'Repl@2026';
+ALTER USER dbadmin WITH PASSWORD 'DbAdmin@2026';
 
 -- 方法二：使用 psql 命令行
-psql -U postgres -c "ALTER USER app_user_rw WITH PASSWORD 'NewPasswordRw@2025';"
-psql -U postgres -c "ALTER USER app_user_ro WITH PASSWORD 'NewPasswordRo@2025';"
+psql -U postgres -c "ALTER USER mall_owner WITH PASSWORD 'MallOwner@2026';"
+psql -U postgres -c "ALTER USER app_user_rw WITH PASSWORD 'AppUserRw@2026';"
+psql -U postgres -c "ALTER USER app_user_ro WITH PASSWORD 'AppUserRo@2026';"
+psql -U postgres -c "ALTER USER monitor_user WITH PASSWORD 'Monitor@2026';"
+psql -U postgres -c "ALTER USER repl_user WITH PASSWORD 'Repl@2026';"
+psql -U postgres -c "ALTER USER dbadmin WITH PASSWORD 'DbAdmin@2026';"
 ```
 
 ---
