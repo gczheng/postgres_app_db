@@ -1,10 +1,17 @@
+/*
+ * PostgreSQL DBA Architecture Playbook
+ * Copyright (c) 2026, gczheng
+ * License: PostgreSQL License / MIT
+ */
+
 -- =====================================================
--- App_db数据库数据插入脚本
+-- App_db数据库数据插入脚本 (v3.1.0)
 -- 数据库名称: app_db
 -- 字符集: UTF8
--- 版本: v1.1.0
--- 创建日期: 2025-12-25
--- 说明: 包含约10万用户数据
+-- 版本: v3.1.0
+-- 创建日期: 2026-04-14
+-- 修订日期: 2026-06-09
+-- 说明: 将数据导入到mall schema，并生成audit和gis测试数据，适配无外键约束的数据库结构。移除了文件名版本后缀。
 -- =====================================================
 
 -- =====================================================
@@ -12,11 +19,18 @@
 -- =====================================================
 SET client_encoding = 'UTF8';
 SET timezone = 'UTC';
+SET search_path TO mall, audit, gis, public;
+
+-- =====================================================
+-- =====================================================
+-- MALL SCHEMA - 电商数据导入
+-- =====================================================
+-- =====================================================
 
 -- =====================================================
 -- 插入分类数据
 -- =====================================================
-INSERT INTO categories (category_id, name, description, parent_category_id, sort_order, is_active, created_at) VALUES
+INSERT INTO mall.categories (category_id, name, description, parent_category_id, sort_order, is_active, created_at) VALUES
 (1, '电子产品', '各类电子数码产品', NULL, 1, true, '2024-01-01 00:00:00'),
 (2, '手机通讯', '智能手机、配件等', 1, 1, true, '2024-01-01 00:00:00'),
 (3, '电脑办公', '笔记本电脑、台式机等', 1, 2, true, '2024-01-01 00:00:00'),
@@ -56,7 +70,7 @@ INSERT INTO categories (category_id, name, description, parent_category_id, sort
 -- =====================================================
 -- 插入商品数据 (73个商品)
 -- =====================================================
-INSERT INTO products (product_id, category_id, name, description, price, stock_quantity, is_active, created_at) VALUES
+INSERT INTO mall.products (product_id, category_id, name, description, price, stock_quantity, is_active, created_at) VALUES
 -- 电子产品
 (1, 2, 'iPhone 15 Pro Max 256GB', '苹果最新旗舰手机，A17 Pro芯片', 9999.00, 100, true, '2024-01-01 00:00:00'),
 (2, 2, '华为Mate 60 Pro 512GB', '华为高端智能手机，卫星通信', 6999.00, 150, true, '2024-01-01 00:00:00'),
@@ -143,15 +157,15 @@ INSERT INTO products (product_id, category_id, name, description, price, stock_q
 -- =====================================================
 -- 插入商品图片数据
 -- =====================================================
-INSERT INTO product_images (product_id, image_url, alt_text, sort_order, is_primary, created_at) VALUES
+INSERT INTO mall.product_images (product_id, image_url, alt_text, sort_order, is_primary, created_at) VALUES
 (1, 'https://example.com/images/iphone15.jpg', 'iPhone 15 Pro Max', 1, true, '2024-01-01 00:00:00'),
 (2, 'https://example.com/images/mate60.jpg', '华为Mate 60 Pro', 1, true, '2024-01-01 00:00:00'),
 (3, 'https://example.com/images/mi14.jpg', '小米14 Ultra', 1, true, '2024-01-01 00:00:00'),
 (6, 'https://example.com/images/macbook.jpg', 'MacBook Pro', 1, true, '2024-01-01 00:00:00'),
 (7, 'https://example.com/images/macbookair.jpg', 'MacBook Air', 1, true, '2024-01-01 00:00:00');
 
--- 为其他商品随机生成图片
-INSERT INTO product_images (product_id, image_url, alt_text, sort_order, is_primary, created_at)
+-- 为其他商品生成图片
+INSERT INTO mall.product_images (product_id, image_url, alt_text, sort_order, is_primary, created_at)
 SELECT
     p.product_id,
     'https://example.com/images/product' || p.product_id || '.jpg' AS image_url,
@@ -159,16 +173,15 @@ SELECT
     1 AS sort_order,
     true AS is_primary,
     p.created_at AS created_at
-FROM products p
+FROM mall.products p
 WHERE p.product_id > 73
   AND NOT EXISTS (
-      SELECT 1 FROM product_images pi WHERE pi.product_id = p.product_id
+      SELECT 1 FROM mall.product_images pi WHERE pi.product_id = p.product_id
   );
 
 -- =====================================================
 -- 插入用户数据（10万用户）
 -- =====================================================
--- 使用批量插入提高效率
 DO $$
 DECLARE
     i INTEGER;
@@ -179,7 +192,7 @@ DECLARE
     phone_prefixes TEXT[] := ARRAY['138', '139', '150', '151', '152', '185', '186', '187', '188', '189'];
 BEGIN
     FOR batch_start IN 0..(total_users/batch_size)-1 LOOP
-        INSERT INTO users (username, email, password_hash, first_name, last_name, phone, is_active, created_at, updated_at)
+        INSERT INTO mall.users (username, email, password_hash, first_name, last_name, phone, is_active, created_at, updated_at)
         SELECT
             'user' || (batch_start * batch_size + generate_series)::text AS username,
             'user' || (batch_start * batch_size + generate_series)::text || '@example.com' AS email,
@@ -206,13 +219,12 @@ DO $$
 DECLARE
     user_record RECORD;
     address_count INTEGER;
-    addr_idx INTEGER;
     phone_prefixes TEXT[] := ARRAY['138', '139', '150', '151', '152', '185', '186', '187', '188', '189'];
 BEGIN
-    FOR user_record IN SELECT user_id, first_name, last_name, phone, created_at, updated_at FROM users LOOP
+    FOR user_record IN SELECT user_id, first_name, last_name, phone, created_at, updated_at FROM mall.users LOOP
         address_count := (random() * 4)::int + 2;
 
-        INSERT INTO addresses (user_id, recipient_name, phone, province, city, district, street_address, postal_code, is_default, created_at)
+        INSERT INTO mall.addresses (user_id, recipient_name, phone, province, city, district, street_address, postal_code, is_default, created_at)
         SELECT
             user_record.user_id,
             COALESCE(user_record.first_name, '') || COALESCE(user_record.last_name, '') AS recipient_name,
@@ -283,11 +295,11 @@ DECLARE
     user_created_at TIMESTAMP;
     user_updated_at TIMESTAMP;
 BEGIN
-    FOR user_record IN SELECT user_id, created_at, updated_at FROM users LIMIT 50000 LOOP
+    FOR user_record IN SELECT user_id, created_at, updated_at FROM mall.users LIMIT 50000 LOOP
         user_created_at := user_record.created_at;
         user_updated_at := user_record.updated_at;
 
-        INSERT INTO user_profiles (user_id, gender, birth_date, avatar_url, bio, created_at, updated_at)
+        INSERT INTO mall.user_profiles (user_id, gender, birth_date, avatar_url, bio, created_at, updated_at)
         VALUES (
             user_record.user_id,
             gender_list[(random() * 1)::int + 1],
@@ -316,14 +328,14 @@ DECLARE
 BEGIN
     -- 随机选择10000个活跃用户
     SELECT array_agg(user_id) INTO user_ids
-    FROM users
+    FROM mall.users
     WHERE is_active = true
     ORDER BY random()
     LIMIT 10000;
 
     -- 获取这些用户的地址
     SELECT array_agg(address_id) INTO address_ids
-    FROM addresses
+    FROM mall.addresses
     WHERE user_id = ANY(user_ids)
     ORDER BY random();
 
@@ -338,7 +350,7 @@ BEGIN
     FOR batch_start IN 0..(total_orders/batch_size)-1 LOOP
         order_date := '2024-01-01 00:00:00'::timestamp + (batch_start * batch_size + random()) * INTERVAL '1 second';
 
-        INSERT INTO orders (user_id, address_id, order_number, total_amount, status, created_at, updated_at)
+        INSERT INTO mall.orders (user_id, address_id, order_number, total_amount, status, created_at, updated_at)
         SELECT
             user_ids[(random() * 9999)::int + 1] AS user_id,
             address_ids[(random() * (addr_count - 1))::int + 1] AS address_id,
@@ -369,7 +381,7 @@ DECLARE
 BEGIN
     -- 获取所有商品ID
     SELECT array_agg(product_id) INTO product_ids
-    FROM products
+    FROM mall.products
     WHERE is_active = true;
 
     product_count := COALESCE(array_length(product_ids, 1), 0);
@@ -379,13 +391,13 @@ BEGIN
         RETURN;
     END IF;
 
-    FOR order_record IN SELECT order_id, total_amount, created_at FROM orders LIMIT 50000 LOOP
+    FOR order_record IN SELECT order_id, total_amount, created_at FROM mall.orders LIMIT 50000 LOOP
         item_count := (random() * 5)::int + 1;
 
         FOR item_idx IN 1..item_count LOOP
             selected_product_id := product_ids[(random() * (product_count - 1))::int + 1];
 
-            INSERT INTO order_items (order_id, product_id, quantity, unit_price, subtotal, created_at)
+            INSERT INTO mall.order_items (order_id, product_id, quantity, unit_price, subtotal, created_at)
             SELECT
                 order_record.order_id,
                 selected_product_id,
@@ -393,7 +405,7 @@ BEGIN
                 price,
                 price * ((random() * 5)::int + 1),
                 order_record.created_at
-            FROM products
+            FROM mall.products
             WHERE product_id = selected_product_id;
         END LOOP;
     END LOOP;
@@ -409,7 +421,7 @@ DECLARE
     history_count INTEGER;
     status_array VARCHAR(50)[];
 BEGIN
-    FOR order_record IN SELECT order_id, status, created_at FROM orders LIMIT 30000 LOOP
+    FOR order_record IN SELECT order_id, status, created_at FROM mall.orders LIMIT 30000 LOOP
         -- 根据订单状态生成历史记录
         IF order_record.status = 'pending' THEN
             status_array := ARRAY['pending'];
@@ -433,9 +445,9 @@ BEGIN
             status_array := ARRAY['pending'];
             history_count := 1;
         END IF;
-        
+
         FOR history_idx IN 1..history_count LOOP
-            INSERT INTO order_status_history (order_id, status, remark, created_at)
+            INSERT INTO mall.order_status_history (order_id, status, remark, created_at)
             VALUES (
                 order_record.order_id,
                 status_array[history_idx],
@@ -454,11 +466,11 @@ DECLARE
     order_record RECORD;
     payment_method_list VARCHAR(50)[] := ARRAY['微信支付', '支付宝', '信用卡', '借记卡', '余额支付'];
 BEGIN
-    FOR order_record IN SELECT order_id, total_amount, status, created_at FROM orders
+    FOR order_record IN SELECT order_id, total_amount, status, created_at FROM mall.orders
                        WHERE status IN ('paid', 'shipped', 'delivered', 'refunded')
                        LIMIT 50000 LOOP
 
-        INSERT INTO payments (order_id, payment_method, amount, status, transaction_id, created_at)
+        INSERT INTO mall.payments (order_id, payment_method, amount, status, transaction_id, created_at)
         VALUES (
             order_record.order_id,
             payment_method_list[(random() * 4)::int + 1],
@@ -494,7 +506,7 @@ DECLARE
     ];
 BEGIN
     FOR batch_start IN 0..(total_reviews/batch_size)-1 LOOP
-        INSERT INTO reviews (user_id, product_id, rating, title, content, is_verified, created_at, updated_at)
+        INSERT INTO mall.reviews (user_id, product_id, rating, title, content, is_verified, created_at, updated_at)
         SELECT
             (random() * 99999)::int + 1 AS user_id,
             (random() * 72)::int + 1 AS product_id,
@@ -518,16 +530,216 @@ END $$;
 -- =====================================================
 DO $$
 BEGIN
-    PERFORM setval('users_user_id_seq', (SELECT COALESCE(MAX(user_id), 1) FROM users));
-    PERFORM setval('addresses_address_id_seq', (SELECT COALESCE(MAX(address_id), 1) FROM addresses));
-    PERFORM setval('user_profiles_profile_id_seq', (SELECT COALESCE(MAX(profile_id), 1) FROM user_profiles));
-    PERFORM setval('products_product_id_seq', (SELECT COALESCE(MAX(product_id), 1) FROM products));
-    PERFORM setval('product_images_image_id_seq', (SELECT COALESCE(MAX(image_id), 1) FROM product_images));
-    PERFORM setval('orders_order_id_seq', (SELECT COALESCE(MAX(order_id), 1) FROM orders));
-    PERFORM setval('order_items_order_item_id_seq', (SELECT COALESCE(MAX(order_item_id), 1) FROM order_items));
-    PERFORM setval('order_status_history_history_id_seq', (SELECT COALESCE(MAX(history_id), 1) FROM order_status_history));
-    PERFORM setval('payments_payment_id_seq', (SELECT COALESCE(MAX(payment_id), 1) FROM payments));
-    PERFORM setval('reviews_review_id_seq', (SELECT COALESCE(MAX(review_id), 1) FROM reviews));
+    PERFORM setval('mall.users_user_id_seq', (SELECT COALESCE(MAX(user_id), 1) FROM mall.users));
+    PERFORM setval('mall.addresses_address_id_seq', (SELECT COALESCE(MAX(address_id), 1) FROM mall.addresses));
+    PERFORM setval('mall.user_profiles_profile_id_seq', (SELECT COALESCE(MAX(profile_id), 1) FROM mall.user_profiles));
+    PERFORM setval('mall.products_product_id_seq', (SELECT COALESCE(MAX(product_id), 1) FROM mall.products));
+    PERFORM setval('mall.product_images_image_id_seq', (SELECT COALESCE(MAX(image_id), 1) FROM mall.product_images));
+    PERFORM setval('mall.orders_order_id_seq', (SELECT COALESCE(MAX(order_id), 1) FROM mall.orders));
+    PERFORM setval('mall.order_items_order_item_id_seq', (SELECT COALESCE(MAX(order_item_id), 1) FROM mall.order_items));
+    PERFORM setval('mall.order_status_history_history_id_seq', (SELECT COALESCE(MAX(history_id), 1) FROM mall.order_status_history));
+    PERFORM setval('mall.payments_payment_id_seq', (SELECT COALESCE(MAX(payment_id), 1) FROM mall.payments));
+    PERFORM setval('mall.reviews_review_id_seq', (SELECT COALESCE(MAX(review_id), 1) FROM mall.reviews));
+END $$;
+
+-- =====================================================
+-- =====================================================
+-- AUDIT SCHEMA - 审计测试数据
+-- =====================================================
+-- =====================================================
+
+-- 插入审计日志测试数据
+DO $$
+DECLARE
+    i INTEGER;
+    table_list TEXT[] := ARRAY['mall.users', 'mall.orders', 'mall.products'];
+    operation_list VARCHAR(20)[] := ARRAY['INSERT', 'UPDATE', 'DELETE'];
+BEGIN
+    FOR i IN 1..1000 LOOP
+        INSERT INTO audit.audit_logs (table_name, operation, operation_time, user_id, ip_address, user_agent)
+        VALUES (
+            table_list[(random() * 2)::int + 1],
+            operation_list[(random() * 2)::int + 1],
+            CURRENT_TIMESTAMP - (random() * 30)::int * INTERVAL '1 day',
+            (random() * 10000)::int + 1,
+            '192.168.1.' || (random() * 255)::int,
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        );
+    END LOOP;
+END $$;
+
+-- 插入用户登录日志测试数据
+DO $$
+DECLARE
+    i INTEGER;
+BEGIN
+    FOR i IN 1..5000 LOOP
+        INSERT INTO audit.login_logs (user_id, login_time, logout_time, ip_address, user_agent, login_status)
+        VALUES (
+            (random() * 10000)::int + 1,
+            CURRENT_TIMESTAMP - (random() * 30)::int * INTERVAL '1 day',
+            CASE WHEN random() > 0.3 THEN CURRENT_TIMESTAMP - (random() * 24)::int * INTERVAL '1 hour' ELSE NULL END,
+            '192.168.1.' || (random() * 255)::int,
+            CASE
+                WHEN random() > 0.5 THEN 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+                ELSE 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'
+            END,
+            CASE
+                WHEN random() > 0.1 THEN 'success'
+                WHEN random() > 0.05 THEN 'failed'
+                ELSE 'locked'
+            END
+        );
+    END LOOP;
+END $$;
+
+-- 插入数据变更历史测试数据
+DO $$
+DECLARE
+    i INTEGER;
+    field_list TEXT[] := ARRAY['username', 'email', 'status', 'price', 'quantity'];
+BEGIN
+    FOR i IN 1..2000 LOOP
+        INSERT INTO audit.data_change_history (schema_name, table_name, record_id, change_type, changed_by, field_name, old_value, new_value)
+        VALUES (
+            'mall',
+            field_list[(random() * 4)::int + 1],
+            (random() * 10000)::int + 1,
+            CASE (random() * 2)::int
+                WHEN 0 THEN 'INSERT'
+                WHEN 1 THEN 'UPDATE'
+                ELSE 'DELETE'
+            END,
+            'system_user_' || (random() * 100)::int,
+            field_list[(random() * 4)::int + 1],
+            CASE WHEN random() > 0.5 THEN 'old_value_' || i ELSE NULL END,
+            'new_value_' || i
+        );
+    END LOOP;
+END $$;
+
+-- =====================================================
+-- =====================================================
+-- GIS SCHEMA - 地理位置（PostGIS）测试数据
+-- =====================================================
+-- =====================================================
+
+-- 插入门店位置测试数据
+DO $$
+DECLARE
+    i INTEGER;
+    city_list TEXT[] := ARRAY['北京市', '上海市', '广州市', '深圳市', '杭州市', '成都市', '武汉市'];
+    district_list TEXT[] := ARRAY['朝阳区', '海淀区', '浦东新区', '南山区', '西湖区', '天河区', '洪山区'];
+BEGIN
+    FOR i IN 1..50 LOOP
+        INSERT INTO gis.store_locations (store_name, address, province, city, district, geometry, phone, email, business_hours, is_active)
+        VALUES (
+            '测试门店' || i,
+            district_list[(i % 7) + 1] || '测试路' || i || '号',
+            '北京市',
+            city_list[(i % 7) + 1],
+            district_list[(i % 7) + 1],
+            ST_SetSRID(ST_MakePoint(116.3 + (random() * 0.1), 39.9 + (random() * 0.1)), 4326),
+            '010-' || LPAD(i::TEXT, 8, '0'),
+            'store' || i || '@test.com',
+            '09:00-21:00',
+            true
+        );
+    END LOOP;
+END $$;
+
+-- 插入配送区域测试数据
+DO $$
+DECLARE
+    i INTEGER;
+BEGIN
+    FOR i IN 1..10 LOOP
+        INSERT INTO gis.delivery_zones (zone_name, zone_type, base_fee, fee_per_km, geometry, is_active)
+        VALUES (
+            '配送区域' || i,
+            CASE (i % 3)
+                WHEN 0 THEN 'standard'
+                WHEN 1 THEN 'express'
+                ELSE 'overtime'
+            END,
+            5.00::DECIMAL(10,2) + i,
+            1.00::DECIMAL(10,2) + (i * 0.1),
+            ST_SetSRID(ST_MakePolygon(
+                ST_MakeLine(
+                    ARRAY[
+                        ST_MakePoint(116.3 + i * 0.1, 39.9 + i * 0.1),
+                        ST_MakePoint(116.4 + i * 0.1, 39.9 + i * 0.1),
+                        ST_MakePoint(116.4 + i * 0.1, 40.0 + i * 0.1),
+                        ST_MakePoint(116.3 + i * 0.1, 40.0 + i * 0.1),
+                        ST_MakePoint(116.3 + i * 0.1, 39.9 + i * 0.1)
+                    ]
+                )
+            ), 4326),
+            true
+        );
+    END LOOP;
+END $$;
+
+-- 插入物流轨迹测试数据
+DO $$
+DECLARE
+    i INTEGER;
+BEGIN
+    FOR i IN 1..100 LOOP
+        INSERT INTO gis.logistics_tracks (order_id, driver_id, vehicle_number, status, geometry, start_time, end_time, distance_km)
+        VALUES (
+            (random() * 10000)::int + 1,
+            (random() * 50)::int + 1,
+            '京A' || LPAD((random() * 99999)::int::TEXT, 5, '0'),
+            CASE (random() * 2)::int
+                WHEN 0 THEN 'in_progress'
+                WHEN 1 THEN 'completed'
+                ELSE 'cancelled'
+            END,
+            ST_SetSRID(ST_MakeLine(
+                ARRAY[
+                    ST_MakePoint(116.3 + (random() * 0.01), 39.9 + (random() * 0.01)),
+                    ST_MakePoint(116.31 + (random() * 0.01), 39.91 + (random() * 0.01)),
+                    ST_MakePoint(116.32 + (random() * 0.01), 39.92 + (random() * 0.01)),
+                    ST_MakePoint(116.33 + (random() * 0.01), 39.93 + (random() * 0.01))
+                ]
+            ), 4326),
+            CURRENT_TIMESTAMP - (random() * 7)::int * INTERVAL '1 day',
+            CURRENT_TIMESTAMP - (random() * 7)::int * INTERVAL '1 day' + (random() * 120)::int * INTERVAL '1 minute',
+            (random() * 50 + 10)::DECIMAL(10,2)
+        );
+    END LOOP;
+END $$;
+
+-- 插入热点区域测试数据
+DO $$
+DECLARE
+    i INTEGER;
+BEGIN
+    FOR i IN 1..20 LOOP
+        INSERT INTO gis.hotspot_areas (area_name, area_type, geometry, user_count, order_count)
+        VALUES (
+            '热点区域' || i,
+            CASE (i % 3)
+                WHEN 0 THEN 'residential'
+                WHEN 1 THEN 'commercial'
+                ELSE 'mixed'
+            END,
+            ST_SetSRID(ST_MakePolygon(
+                ST_MakeLine(
+                    ARRAY[
+                        ST_MakePoint(116.3 + i * 0.02, 39.9 + i * 0.02),
+                        ST_MakePoint(116.32 + i * 0.02, 39.9 + i * 0.02),
+                        ST_MakePoint(116.32 + i * 0.02, 39.91 + i * 0.02),
+                        ST_MakePoint(116.3 + i * 0.02, 39.91 + i * 0.02),
+                        ST_MakePoint(116.3 + i * 0.02, 39.9 + i * 0.02)
+                    ]
+                )
+            ), 4326),
+            (random() * 10000)::int + 1000,
+            (random() * 50000)::int + 5000
+        );
+    END LOOP;
 END $$;
 
 -- =====================================================
@@ -535,17 +747,44 @@ END $$;
 -- =====================================================
 
 -- 显示统计信息
-SELECT '用户数量' AS 统计项, COUNT(*) AS 数量 FROM users
+SELECT 'MALL Schema' AS Schema, '用户数量' AS 统计项, COUNT(*) AS 数量 FROM mall.users
 UNION ALL
-SELECT '地址数量', COUNT(*) FROM addresses
+SELECT 'MALL Schema', '地址数量', COUNT(*) FROM mall.addresses
 UNION ALL
-SELECT '商品数量', COUNT(*) FROM products
+SELECT 'MALL Schema', '商品数量', COUNT(*) FROM mall.products
 UNION ALL
-SELECT '订单数量', COUNT(*) FROM orders
+SELECT 'MALL Schema', '订单数量', COUNT(*) FROM mall.orders
 UNION ALL
-SELECT '订单项数量', COUNT(*) FROM order_items
+SELECT 'MALL Schema', '订单项数量', COUNT(*) FROM mall.order_items
 UNION ALL
-SELECT '支付数量', COUNT(*) FROM payments
+SELECT 'MALL Schema', '支付数量', COUNT(*) FROM mall.payments
 UNION ALL
-SELECT '评论数量', COUNT(*) FROM reviews
-ORDER BY 数量 DESC;
+SELECT 'MALL Schema', '评论数量', COUNT(*) FROM mall.reviews
+UNION ALL
+SELECT 'AUDIT Schema', '审计日志数量', COUNT(*) FROM audit.audit_logs
+UNION ALL
+SELECT 'AUDIT Schema', '登录日志数量', COUNT(*) FROM audit.login_logs
+UNION ALL
+SELECT 'AUDIT Schema', '数据变更历史数量', COUNT(*) FROM audit.data_change_history
+UNION ALL
+SELECT 'GIS Schema', '门店位置数量', COUNT(*) FROM gis.store_locations
+UNION ALL
+SELECT 'GIS Schema', '配送区域数量', COUNT(*) FROM gis.delivery_zones
+UNION ALL
+SELECT 'GIS Schema', '物流轨迹数量', COUNT(*) FROM gis.logistics_tracks
+UNION ALL
+SELECT 'GIS Schema', '热点区域数量', COUNT(*) FROM gis.hotspot_areas
+ORDER BY Schema, 数量 DESC;
+
+-- =====================================================
+-- 执行完成
+-- =====================================================
+DO $$
+BEGIN
+    RAISE NOTICE '========================================';
+    RAISE NOTICE '数据导入完成！';
+    RAISE NOTICE 'MALL Schema: 包含电商核心数据';
+    RAISE NOTICE 'AUDIT Schema: 包含审计日志测试数据';
+    RAISE NOTICE 'GIS Schema: 包含地理位置测试数据（PostGIS）';
+    RAISE NOTICE '========================================';
+END $$;
